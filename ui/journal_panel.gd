@@ -336,7 +336,7 @@ func _build_puzzle_sections() -> void:
 	_items_box.add_child(ev_title)
 	var ev_index: int = 0
 	for eid in ev_ids:
-		var chip: Panel = _puzzle_chip(Vector2(492 + (ev_index % 3) * 142, 340 + (ev_index / 3) * 30), puzzle.evidence_name(eid), fresh.has(eid))
+		var chip: Panel = _puzzle_chip(Vector2(492 + (ev_index % 3) * 142, 340 + (ev_index / 3) * 40), puzzle.evidence_name(eid), fresh.has(eid), puzzle.usage_of(eid))
 		_items_box.add_child(chip)
 		ev_index += 1
 	if ev_ids.is_empty():
@@ -349,7 +349,7 @@ func _build_puzzle_sections() -> void:
 	_items_box.add_child(clue_title)
 	var clue_index: int = 0
 	for cid in clue_ids:
-		var chip2: Panel = _puzzle_chip(Vector2(492 + (clue_index % 3) * 142, 424), puzzle.clue_name(cid), fresh.has(cid))
+		var chip2: Panel = _puzzle_chip(Vector2(492 + (clue_index % 3) * 142, 424), puzzle.clue_name(cid), fresh.has(cid), "")
 		_items_box.add_child(chip2)
 		clue_index += 1
 	if clue_ids.is_empty():
@@ -357,15 +357,20 @@ func _build_puzzle_sections() -> void:
 		empty_clue.position = Vector2(492, 424)
 		_items_box.add_child(empty_clue)
 
-func _puzzle_chip(at: Vector2, text: String, is_fresh: bool) -> Panel:
+func _puzzle_chip(at: Vector2, text: String, is_fresh: bool, usage: String) -> Panel:
 	var chip: Panel = Panel.new()
 	chip.position = at
-	chip.size = Vector2(136, 26)
+	var chip_height: int = 40 if not usage.is_empty() else 26
+	chip.size = Vector2(136, chip_height)
 	var border: Color = SKIN.GOLD if is_fresh else Color(0.55, 0.45, 0.30, 0.35)
 	chip.add_theme_stylebox_override("panel", SKIN.style(Color(0.94, 0.89, 0.79, 0.92), border, 2 if is_fresh else 1, 4))
-	var label: Label = SKIN.make_label(text, 10, SKIN.INK, 120.0)
-	label.position = Vector2(8, 6)
+	var label: Label = SKIN.make_label(text, 10, SKIN.INK, 118.0)
+	label.position = Vector2(8, 4)
 	chip.add_child(label)
+	if not usage.is_empty():
+		var usage_label: Label = SKIN.make_label(usage, 8, SKIN.INK_SOFT, 120.0)
+		usage_label.position = Vector2(8, 20)
+		chip.add_child(usage_label)
 	if is_fresh:
 		var badge: Label = SKIN.make_label("新", 10, SKIN.GOLD, 16.0, HORIZONTAL_ALIGNMENT_CENTER)
 		badge.position = Vector2(116, 4)

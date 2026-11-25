@@ -335,6 +335,8 @@ func _close_dialog_now() -> void:
 	_dialog_panel.visible = false
 	_dialog_panel.modulate.a = 0.0
 	_dialog_hint.modulate.a = 0.0
+	_dialog_label.text = ""
+	_dialog_speaker.text = ""
 	_set_hint_visible(true)
 
 func _process(delta: float) -> void:
@@ -523,13 +525,40 @@ func _say_npc(npc: Dictionary) -> void:
 		TurnState.unlock_person(person, true)
 		if count == 0:
 			toast("认识了一个人 · " + who)
+
+	# 出示物证分支：持有指定物证且尚未出示过，递出后给回复与新物证。
+	var present: Dictionary = npc.get("present", {}) as Dictionary
+	var present_ev: String = str(present.get("evidence", ""))
+	var present_flag: String = "presented_" + person
+	if puzzle != null and not present_ev.is_empty() and puzzle.has_evidence(present_ev) and not TurnState.has_flag(present_flag):
+		TurnState.set_flag(present_flag, true)
+		var grant: String = str(present.get("grants_evidence", ""))
+		var granted_name: String = ""
+		if not grant.is_empty() and puzzle.add_evidence(grant):
+			granted_name = puzzle.evidence_name(grant)
+			_play_pickup(npc.get("pos", Vector2.ZERO) as Vector2, granted_name)
+		say(str(present.get("reply", "……")), who)
+		if not granted_name.is_empty():
+			toast("出示物证 · 得到 " + granted_name)
+		else:
+			toast("出示物证 · " + puzzle.evidence_name(present_ev))
+		return
+
+	# 物证感知分支：持有 / 未持有指定物证时说不同的话。
+	var need: String = str(npc.get("needs_evidence", ""))
 	var text: String = str(npc.get("line", "……"))
-	if count == 1 and npc.has("line2"):
-		text = str(npc.get("line2"))
-	elif count >= 2 and npc.has("line3"):
-		text = str(npc.get("line3"))
-	elif count > 0 and npc.has("line2"):
-		text = str(npc.get("line2"))
+	if not need.is_empty() and puzzle != null:
+		if puzzle.has_evidence(need):
+			text = str(npc.get("lines_with_evidence", npc.get("line2", text)))
+		else:
+			text = str(npc.get("lines_without", text))
+	else:
+		if count == 1 and npc.has("line2"):
+			text = str(npc.get("line2"))
+		elif count >= 2 and npc.has("line3"):
+			text = str(npc.get("line3"))
+		elif count > 0 and npc.has("line2"):
+			text = str(npc.get("line2"))
 	say(text, who)
 
 func _use_spot(spot: Dictionary) -> void:
@@ -545,19 +574,23 @@ func _use_spot(spot: Dictionary) -> void:
 		view.pulse(at, Color(0.98, 0.84, 0.48, 1.0))
 	match kind:
 		"item":
-			TurnState.unlock_item(arg)
 			var ev: String = str(spot.get("gives_evidence", ""))
 			if not ev.is_empty() and puzzle != null:
-				if puzzle.add_evidence(ev):
+				if puzzle.has_evidence(ev):
+					say("这处已经记过了，换个地方再找找。", "手记")
+				elif puzzle.add_evidence(ev):
+					TurnState.unlock_item(arg)
 					_play_pickup(at, puzzle.evidence_name(ev))
 					say(label + "。我把它记进了手记。", "手记")
-					if first_time:
-						toast("手记 +1 · " + puzzle.evidence_name(ev))
+					toast("手记 +1 · " + puzzle.evidence_name(ev))
 				else:
 					say("这件东西刚才已经收进手记了。", "手记")
 			else:
-				say(label + "。我把它记在手记里了。", "手记")
-				if first_time:
+				if not arg.is_empty() and TurnState.knows_item(arg):
+					say("这件已经记在手记里了，这处不再重复记。", "手记")
+				else:
+					TurnState.unlock_item(arg)
+					say(label + "。我把它记在手记里了。", "手记")
 					toast("手记 +1 · " + label)
 		"combo":
 			_use_combo(spot)

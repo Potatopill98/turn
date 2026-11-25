@@ -15,6 +15,19 @@ const EVIDENCE_NAMES: Dictionary = {
 	"ev_shoes": "灯下的旧鞋",
 	"ev_list": "搬家清单",
 	"ev_tape": "旧磁带",
+	"ev_mirror": "裂了两道缝的破镜子",
+}
+
+# 每件物证的出口去向（锁 / 组合 / 出示），手记分区里标注用。
+const EVIDENCE_USAGE: Dictionary = {
+	"ev_letter": "开锁：凭它离开出租屋去公司",
+	"ev_note": "组合：和旧照片并排对上",
+	"ev_photo": "开锁：凭它进老宅堂屋；组合：和便签对上",
+	"ev_screw": "组合：和旧鞋并排对上",
+	"ev_shoes": "组合：和螺丝对上；可出示给周德海",
+	"ev_list": "组合：和旧磁带并排对上",
+	"ev_tape": "组合：和搬家清单对上",
+	"ev_mirror": "出示：周德海夜里交托的旧镜",
 }
 
 # 组合推论登记（id -> 名称 / 文本）。
@@ -67,6 +80,9 @@ func fresh_ids() -> Array[String]:
 
 func evidence_name(id: String) -> String:
 	return str(EVIDENCE_NAMES.get(id, id))
+
+func usage_of(id: String) -> String:
+	return str(EVIDENCE_USAGE.get(id, ""))
 
 func clue_name(id: String) -> String:
 	return str(CLUE_NAMES.get(id, id))

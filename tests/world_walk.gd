@@ -39,8 +39,11 @@ func _ready() -> void:
 
 	_static_checks()
 	_reachability_checks()
+	_cross_scene_reachability()
 	_puzzle_checks()
+	_wiring_checks()
 	await _lock_world_checks()
+	await _cross_scene_chain()
 	_random_rounds()
 	_report()
 
@@ -121,6 +124,50 @@ func _reachability_checks() -> void:
 				_fail("%s 热点不可达：%s %s" % [scene_id, str(s.get("label", "")), str(s.get("pos", Vector2.ZERO))])
 	checks += 1
 	print("  可达性检查完成")
+
+func _cross_scene_reachability() -> void:
+	print("== 跨场景连通 BFS ==")
+	var scenes: Dictionary = WorldData.all()
+	var adjacency: Dictionary = {}
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		var edges: Array[String] = []
+		for exit in data.get("exits", []) as Array:
+			var e: Dictionary = exit as Dictionary
+			if bool(e.get("wake", false)):
+				continue
+			var to: String = str(e.get("to", ""))
+			if not to.is_empty() and scenes.has(to):
+				edges.append(to)
+		for spot in data.get("spots", []) as Array:
+			var s: Dictionary = spot as Dictionary
+			var kind: String = str(s.get("kind", ""))
+			if kind == "travel" or kind == "dream":
+				var target: String = str(s.get("arg", ""))
+				if scenes.has(target):
+					edges.append(target)
+		adjacency[scene_id] = edges
+	var visited: Dictionary = {"langcheng_room": true}
+	var queue: Array[String] = ["langcheng_room"]
+	var head: int = 0
+	while head < queue.size():
+		var cur: String = queue[head]
+		head += 1
+		for nxt in adjacency.get(cur, []) as Array:
+			var n: String = str(nxt)
+			if not visited.has(n):
+				visited[n] = true
+				queue.append(n)
+	var orphans: Array[String] = []
+	for id in scenes.keys():
+		if not visited.has(str(id)):
+			orphans.append(str(id))
+	if orphans.is_empty():
+		_ok()
+		print("  19 场景全部可达（跨场景 BFS）  OK")
+	else:
+		_fail("孤儿场景无入边：" + ", ".join(orphans))
 
 func _flood(data: Dictionary, probe: RefCounted) -> Dictionary:
 	var bounds: Rect2 = data.get("bounds", Rect2()) as Rect2
@@ -292,6 +339,141 @@ func _puzzle_checks() -> void:
 	else:
 		_fail("条件锁出口应 ≥5，实际 %d" % locked_count)
 	checks += 1
+
+func _wiring_checks() -> void:
+	print("== NPC 分支与物证出口 ==")
+	var scenes: Dictionary = WorldData.all()
+	var evidence_reg: Dictionary = PuzzleState.EVIDENCE_NAMES
+	var branch_npc: int = 0
+	var present_npc: int = 0
+	var outlet: Dictionary = {}
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		for npc in data.get("npcs", []) as Array:
+			var n: Dictionary = npc as Dictionary
+			var need: String = str(n.get("needs_evidence", ""))
+			if not need.is_empty():
+				branch_npc += 1
+				if not evidence_reg.has(need):
+					_fail("%s NPC %s 引用未知物证 %s" % [scene_id, str(n.get("name", "")), need])
+				if str(n.get("lines_with_evidence", "")).is_empty() or str(n.get("lines_without", "")).is_empty():
+					_fail("%s NPC %s 缺持有/未持有分支台词" % [scene_id, str(n.get("name", ""))])
+			var present: Dictionary = n.get("present", {}) as Dictionary
+			if not present.is_empty():
+				present_npc += 1
+				var pe: String = str(present.get("evidence", ""))
+				if not evidence_reg.has(pe):
+					_fail("%s NPC %s 出示未知物证 %s" % [scene_id, str(n.get("name", "")), pe])
+				if str(present.get("reply", "")).is_empty():
+					_fail("%s NPC %s 出示后缺回复台词" % [scene_id, str(n.get("name", ""))])
+				var grant: String = str(present.get("grants_evidence", ""))
+				if not grant.is_empty() and not evidence_reg.has(grant):
+					_fail("%s NPC %s 出示奖励未知物证 %s" % [scene_id, str(n.get("name", "")), grant])
+				outlet[pe] = true
+		for exit in data.get("exits", []) as Array:
+			var e: Dictionary = exit as Dictionary
+			var lock: Dictionary = e.get("lock", {}) as Dictionary
+			for eid in lock.get("evidence", []) as Array:
+				outlet[str(eid)] = true
+		for spot in data.get("spots", []) as Array:
+			var s: Dictionary = spot as Dictionary
+			if str(s.get("kind", "")) == "combo":
+				var combo: Dictionary = s.get("combo", {}) as Dictionary
+				outlet[str(combo.get("a", ""))] = true
+				outlet[str(combo.get("b", ""))] = true
+	if branch_npc >= 3:
+		_ok()
+		print("  物证感知 NPC %d 个（≥3）  OK" % branch_npc)
+	else:
+		_fail("物证感知 NPC 应 ≥3，实际 %d" % branch_npc)
+	if present_npc >= 1:
+		_ok()
+		print("  可出示物证的 NPC %d 个（≥1）  OK" % present_npc)
+	else:
+		_fail("至少 1 个 NPC 可出示物证推进谜题")
+	if outlet.size() >= 5:
+		_ok()
+		print("  有出口的物证 %d 件（≥5）  OK" % outlet.size())
+	else:
+		_fail("有出口的物证应 ≥5，实际 %d" % outlet.size())
+
+func _find_evidence_spot(ev: String) -> Dictionary:
+	for spot in world.current_scene_data().get("spots", []) as Array:
+		var s: Dictionary = spot as Dictionary
+		if str(s.get("gives_evidence", "")) == ev:
+			return s
+	return {}
+
+func _find_combo_spot(clue: String) -> Dictionary:
+	for spot in world.current_scene_data().get("spots", []) as Array:
+		var s: Dictionary = spot as Dictionary
+		var combo: Dictionary = s.get("combo", {}) as Dictionary
+		if str(combo.get("clue", "")) == clue:
+			return s
+	return {}
+
+func _find_exit_to(target: String) -> Dictionary:
+	for exit in world.current_scene_data().get("exits", []) as Array:
+		var e: Dictionary = exit as Dictionary
+		if str(e.get("to", "")) == target:
+			return e
+	return {}
+
+func _cross_scene_chain() -> void:
+	print("== 跨场景推进链 ==")
+	# A=old_house_yard 取 ev_photo → B=house_hall 取 ev_note → 合成 cl_score → 回 C=house_hall 开锁 → D=basement
+	world.force_scene("old_house_yard")
+	await get_tree().process_frame
+	var photo_spot: Dictionary = _find_evidence_spot("ev_photo")
+	if photo_spot.is_empty():
+		_fail("链上找不到 ev_photo 热点")
+		return
+	world._use_spot(photo_spot)
+	await get_tree().process_frame
+	if world.puzzle.has_evidence("ev_photo"):
+		_ok()
+		print("  A 场景 old_house_yard 取得 ev_photo  OK")
+	else:
+		_fail("第一步：old_house_yard 应取得 ev_photo")
+
+	world.force_scene("house_hall")
+	await get_tree().process_frame
+	var note_spot: Dictionary = _find_evidence_spot("ev_note")
+	if note_spot.is_empty():
+		_fail("链上找不到 ev_note 热点")
+		return
+	world._use_spot(note_spot)
+	await get_tree().process_frame
+	if world.puzzle.has_evidence("ev_note"):
+		_ok()
+		print("  B 场景 house_hall 取得 ev_note  OK")
+	else:
+		_fail("第二步：house_hall 应取得 ev_note")
+
+	var combo_spot: Dictionary = _find_combo_spot("cl_score")
+	if combo_spot.is_empty():
+		_fail("链上找不到 cl_score 组合热点")
+		return
+	world._use_combo(combo_spot)
+	await get_tree().process_frame
+	if world.puzzle.has_clue("cl_score"):
+		_ok()
+		print("  两件物证合成推论 cl_score  OK")
+	else:
+		_fail("第三步：ev_note+ev_photo 应合成 cl_score")
+
+	var basement_exit: Dictionary = _find_exit_to("basement")
+	if basement_exit.is_empty():
+		_fail("链上找不到去 basement 的出口")
+		return
+	world._use_exit(basement_exit)
+	await get_tree().create_timer(0.90).timeout
+	if world.scene_id == "basement":
+		_ok()
+		print("  回 C 场景开锁进入 D=basement  OK")
+	else:
+		_fail("合成 cl_score 后应能进入 basement，实际：" + world.scene_id)
 
 func _lock_world_checks() -> void:
 	print("== 锁出口世界级检查 ==")

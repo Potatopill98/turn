@@ -134,8 +134,8 @@ static func all() -> Dictionary:
 		},
 		"props": [],
 		"npcs": [
-			{"name": "张成", "pos": Vector2(700, 630), "id": "p_zhang", "line": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。", "line2": "你妈今早去镇口了。她说你要是回来，先去老宅看看，别急着找她。"},
-			{"name": "周德海", "pos": Vector2(340, 690), "id": "p_zhou", "line": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "line2": "你小时候天天在这条街上跑。那时候路灯坏一盏，整条街都黑，没人修。"},
+			{"name": "张成", "pos": Vector2(700, 630), "id": "p_zhang", "needs_evidence": "ev_letter", "line": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。", "line2": "你妈今早去镇口了。她说你要是回来，先去老宅看看，别急着找她。", "lines_without": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。", "lines_with_evidence": "合同上那个地址我认得。你妈走之前也提过一回——先去老宅看看，别急着找她。"},
+			{"name": "周德海", "pos": Vector2(340, 690), "id": "p_zhou", "needs_evidence": "ev_screw", "line": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "line2": "你小时候天天在这条街上跑。那时候路灯坏一盏，整条街都黑，没人修。", "lines_without": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "lines_with_evidence": "螺丝你都摸到了？这架子我修了三回。真正没人带走的，是灯下那双鞋。"},
 		],
 		"spots": [
 			{"pos": Vector2(360, 440), "label": "老宅的门", "kind": "travel", "arg": "old_house_yard"},
@@ -248,6 +248,7 @@ static func all() -> Dictionary:
 		],
 		"exits": [
 			{"pos": Vector2(120, 560), "to": "town_road", "label": "回老街", "spawn": "play"},
+			{"pos": Vector2(760, 560), "to": "playground_night", "label": "等到入夜 · 蓝调夜色", "spawn": "night"},
 		],
 	}
 
@@ -262,10 +263,10 @@ static func all() -> Dictionary:
 		"walk": [Rect2(120, 420, 720, 160)],
 		"blocks": [],
 		"spawn": Vector2(300, 545),
-		"spawns": {"day": Vector2(300, 545)},
+		"spawns": {"day": Vector2(300, 545), "night": Vector2(300, 545)},
 		"props": [],
 		"npcs": [
-			{"name": "周德海", "pos": Vector2(520, 540), "id": "p_zhou", "line": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "line2": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "line3": "你妈以前每晚都在这看着。她不说，我知道她在等谁。"},
+			{"name": "周德海", "pos": Vector2(520, 540), "id": "p_zhou", "needs_evidence": "ev_shoes", "line": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "line2": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "line3": "你妈以前每晚都在这看着。她不说，我知道她在等谁。", "lines_without": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "lines_with_evidence": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "present": {"evidence": "ev_shoes", "reply": "你把那双旧鞋提过来。他低头擦了擦鞋面的灰，把墙角那面裂了两道缝的破镜子塞给我：「夜里路灯底下，照得见回去的路。」", "grants_evidence": "ev_mirror"}},
 		],
 		"spots": [
 			{"pos": Vector2(700, 470), "label": "路灯", "kind": "item", "arg": "e_lamp"},
