@@ -28,6 +28,9 @@ var _right_mode: String = "legacy"
 var _was_paused: bool = false
 var _sound: AudioStreamPlayer
 var puzzle: RefCounted = null
+var _slots: Array[String] = ["", ""]
+var _combo_feedback: String = ""
+var _combo_ok: bool = false
 
 func _ready() -> void:
 	layer = PANEL_LAYER
@@ -165,6 +168,9 @@ func open() -> void:
 	visible = true
 	_selection = {"kind": "goal", "id": ""}
 	_tab = "goal"
+	_slots = ["", ""]
+	_combo_feedback = ""
+	_combo_ok = false
 	if puzzle != null:
 		puzzle.reload()
 		puzzle.clear_fresh()
@@ -353,59 +359,132 @@ func _build_puzzle_sections() -> void:
 	var ev_ids: Array[String] = puzzle.all_evidence()
 	var clue_ids: Array[String] = puzzle.all_clues()
 
-	var ev_title: Label = SKIN.make_label("现场物证（解谜）  %d" % ev_ids.size(), 13, SKIN.INK)
-	ev_title.position = Vector2(492, 100)
+	var ev_title: Label = SKIN.make_label("推理台 · 挑两件物证对照", 13, SKIN.INK)
+	ev_title.position = Vector2(492, 96)
 	_items_box.add_child(ev_title)
+
+	# 两个槽位：点击槽内文字可取出；点击物证 chips 进入 / 替换槽位。
+	for slot_index in 2:
+		var slot_btn: Button = SKIN.make_button("", 11, 136.0, 32.0)
+		slot_btn.position = Vector2(492 + slot_index * 142, 122)
+		var slot_id: String = _slots[slot_index]
+		var slot_text: String = "槽 %d" % (slot_index + 1) if slot_id.is_empty() else puzzle.evidence_name(slot_id)
+		slot_btn.text = slot_text
+		if not slot_id.is_empty():
+			slot_btn.add_theme_stylebox_override("normal", SKIN.style(Color(SKIN.GOLD, 0.85), SKIN.INK, 2, 4))
+		slot_btn.pressed.connect(_clear_slot.bind(slot_index))
+		_items_box.add_child(slot_btn)
+
+	var submit_btn: Button = SKIN.make_button("对上", 12, 136.0, 32.0)
+	submit_btn.position = Vector2(776, 122)
+	submit_btn.pressed.connect(_submit_combo)
+	_items_box.add_child(submit_btn)
+
+	var feedback_color: Color = SKIN.GREEN if _combo_ok else SKIN.RED
+	var feedback: Label = SKIN.make_label(_combo_feedback, 11, feedback_color, 424.0)
+	feedback.position = Vector2(492, 160)
+	_items_box.add_child(feedback)
+
+	# 物证列表（可滚动）：点击 chip 选中 / 取消 / 替换进槽位。
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.position = Vector2(492, 190)
+	scroll.size = Vector2(424, 118)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_items_box.add_child(scroll)
+	var list_box: Control = Control.new()
+	list_box.size = Vector2(412, maxf(118.0, float(ev_ids.size()) / 3.0 * 32.0 + 8.0))
+	scroll.add_child(list_box)
 	var ev_index: int = 0
 	for eid in ev_ids:
-		var chip: Button = _puzzle_chip(Vector2(492 + (ev_index % 3) * 142, 124 + (ev_index / 3) * 40), puzzle.evidence_name(eid), fresh.has(eid), puzzle.usage_of(eid), "evidence", eid)
-		_items_box.add_child(chip)
+		var chip: Button = _puzzle_chip(Vector2((ev_index % 3) * 136, (ev_index / 3) * 32), puzzle.evidence_name(eid), fresh.has(eid), "evidence", eid)
+		list_box.add_child(chip)
 		ev_index += 1
 	if ev_ids.is_empty():
 		var empty_ev: Label = SKIN.make_label("还没有捡到现场物证。", 11, SKIN.INK_SOFT)
-		empty_ev.position = Vector2(492, 124)
-		_items_box.add_child(empty_ev)
+		empty_ev.position = Vector2(4, 4)
+		list_box.add_child(empty_ev)
 
-	var clue_title: Label = SKIN.make_label("组合推论  %d" % clue_ids.size(), 13, SKIN.INK)
-	clue_title.position = Vector2(492, 244)
+	var clue_title: Label = SKIN.make_label("已推出的推论  %d" % clue_ids.size(), 13, SKIN.INK)
+	clue_title.position = Vector2(492, 326)
 	_items_box.add_child(clue_title)
 	var clue_index: int = 0
 	for cid in clue_ids:
-		var chip2: Button = _puzzle_chip(Vector2(492 + (clue_index % 3) * 142, 268), puzzle.clue_name(cid), fresh.has(cid), "", "clue", cid)
+		var chip2: Button = _puzzle_chip(Vector2(492 + (clue_index % 3) * 142, 350), puzzle.clue_name(cid), fresh.has(cid), "clue", cid)
 		_items_box.add_child(chip2)
 		clue_index += 1
 	if clue_ids.is_empty():
-		var empty_clue: Label = SKIN.make_label("把两件物证并排对上，才能推出一条推论。", 11, SKIN.INK_SOFT)
-		empty_clue.position = Vector2(492, 268)
+		var empty_clue: Label = SKIN.make_label("两件物证对上之后，这里才会出现一条推论。", 11, SKIN.INK_SOFT)
+		empty_clue.position = Vector2(492, 350)
 		_items_box.add_child(empty_clue)
 
-func _puzzle_chip(at: Vector2, text: String, is_fresh: bool, usage: String, kind: String, id: String) -> Button:
+func _puzzle_chip(at: Vector2, text: String, is_fresh: bool, kind: String, id: String) -> Button:
 	var chip: Button = Button.new()
 	chip.position = at
 	chip.size = Vector2(136, 26)
 	var border: Color = SKIN.INK if is_fresh else Color(0.55, 0.45, 0.30, 0.35)
+	var in_slot: bool = kind == "evidence" and (_slots[0] == id or _slots[1] == id)
+	if in_slot:
+		border = SKIN.GOLD
 	chip.add_theme_stylebox_override("normal", SKIN.style(Color(0.94, 0.89, 0.79, 0.92), border, 2, 4))
 	chip.add_theme_stylebox_override("hover", SKIN.style(Color(0.96, 0.91, 0.81, 0.95), SKIN.GOLD_DIM, 2, 4))
 	chip.add_theme_stylebox_override("pressed", SKIN.style(SKIN.GOLD, SKIN.GOLD, 2, 4))
 	var selected: bool = str(_selection.get("kind", "")) == kind and str(_selection.get("id", "")) == id
 	if selected:
 		chip.add_theme_stylebox_override("normal", SKIN.style(SKIN.GOLD, SKIN.INK, 2, 4))
-	# 暖色投影：与场景层软阴影一致，避免纸卡浮在纸面。
-	var shadow: ColorRect = ColorRect.new()
-	shadow.color = Color(0.30, 0.22, 0.12, 0.25)
-	shadow.position = Vector2(3, 4)
-	shadow.size = Vector2(136, 26)
-	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	chip.add_child(shadow)
 	var label: Label = SKIN.make_label(text, 10, SKIN.INK, 118.0)
 	label.position = Vector2(8, 4)
 	chip.add_child(label)
-	if is_fresh:
+	if in_slot:
+		var badge: Label = SKIN.make_label("槽", 10, SKIN.GOLD_DIM, 16.0, HORIZONTAL_ALIGNMENT_CENTER)
+		badge.position = Vector2(116, 4)
+		chip.add_child(badge)
+	elif is_fresh and kind == "evidence":
 		var badge: Label = SKIN.make_label("新", 10, SKIN.GOLD, 16.0, HORIZONTAL_ALIGNMENT_CENTER)
 		badge.position = Vector2(116, 4)
 		chip.add_child(badge)
-	chip.pressed.connect(_select_puzzle.bind(kind, id))
+	if kind == "evidence":
+		chip.pressed.connect(_toggle_slot.bind(id))
+	else:
+		chip.pressed.connect(_select_puzzle.bind(kind, id))
 	return chip
+
+func _toggle_slot(id: String) -> void:
+	if _slots[0] == id:
+		_slots[0] = ""
+	elif _slots[1] == id:
+		_slots[1] = ""
+	elif _slots[0].is_empty():
+		_slots[0] = id
+	elif _slots[1].is_empty():
+		_slots[1] = id
+	else:
+		_slots[1] = id
+	_combo_feedback = ""
+	_refresh()
+
+func _clear_slot(index: int) -> void:
+	_slots[index] = ""
+	_combo_feedback = ""
+	_refresh()
+
+func _submit_combo() -> void:
+	if puzzle == null:
+		return
+	if _slots[0].is_empty() or _slots[1].is_empty():
+		_combo_ok = false
+		_combo_feedback = "先从下面物证里挑两件放进槽里。"
+		_refresh()
+		return
+	var result: Dictionary = puzzle.combine_attempt(_slots[0], _slots[1])
+	if bool(result.get("ok", false)):
+		_combo_ok = true
+		_combo_feedback = "对上了：" + puzzle.clue_name(str(result.get("clue", "")))
+		_slots = ["", ""]
+		TurnState.note_progress()
+	else:
+		_combo_ok = false
+		_combo_feedback = str(result.get("reason", "这两件对不上。"))
+	_refresh()
 
 func _select_puzzle(kind: String, id: String) -> void:
 	_selection = {"kind": kind, "id": id}
@@ -479,7 +558,8 @@ func _build_detail() -> void:
 			src_names.append(puzzle.evidence_name(str(sid)))
 		var source_line: String = "合成自：" + " + ".join(src_names) if not src_names.is_empty() else ""
 		var clue_body: String = puzzle.clue_text(id)
-		body_text = clue_body + ("\n" + source_line if not source_line.is_empty() else "")
+		var usage_line: String = puzzle.clue_usage(id)
+		body_text = clue_body + ("\n" + source_line if not source_line.is_empty() else "") + ("\n去向：" + usage_line if not usage_line.is_empty() else "")
 		foot_text = "推论来自两件物证的并排对照"
 	elif kind == "hint":
 		title_text = "提示  " + str(TurnState.hint_index) + " / 3"

@@ -11,12 +11,36 @@ const SKIN = preload("res://ui/theme.gd")
 const Journal = preload("res://ui/journal_panel.gd")
 const PuzzleState = preload("res://world/puzzle_state.gd")
 const AnimFx = preload("res://world/anim_fx.gd")
+const Data = preload("res://scripts/turn_data.gd")
 
 const FONT_SIZE_HUD: int = 12
 const SPOT_RADIUS: float = 76.0
 const NPC_RADIUS: float = 84.0
 const EXIT_RADIUS: float = 76.0
 const SAVE_FILE: String = "user://turn_world.cfg"
+
+# 场景所属幕：进场景时按幕切换提示层（R078）。
+const ACT_BY_SCENE: Dictionary = {
+	"langcheng_room": "prologue",
+	"langcheng_office": "prologue",
+	"langcheng_factory": "A3",
+	"town_gate": "prologue",
+	"town_road": "A1",
+	"old_house_yard": "A1",
+	"house_hall": "A1",
+	"basement": "A1",
+	"playground_day": "A2",
+	"playground_night": "A2",
+	"street_cross": "A3",
+	"town_final": "ending",
+	"dream_classroom": "A1",
+	"dream_alley": "A1",
+	"dream_postbox": "A1",
+	"dream_box": "A1",
+	"dream_swing": "A2",
+	"dream_dirt_road": "A3",
+	"dream_station": "A3",
+}
 
 # 每个地点首访播放的剧情段（act, 起始 beat, 结束 beat 不含）
 const INTROS: Dictionary = {
@@ -91,6 +115,12 @@ var _bubble_w_cache: Dictionary = {}
 var _footstep: AudioStreamPlayer = null
 var _last_step_frame: int = -1
 var _cam_pos: Vector2 = Vector2.ZERO
+var _present_layer: CanvasLayer = null
+var _present_panel: Panel = null
+var _present_list: Control = null
+var _present_npc: Dictionary = {}
+var _present_wrong_count: Dictionary = {}
+var _refusal_count: Dictionary = {}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -282,6 +312,9 @@ func _enter(id: String, spawn_name: String = "", play_intro: bool = true) -> voi
 	var zoom_tween: Tween = create_tween()
 	zoom_tween.tween_method(_set_zoom_scale, 0.94, 1.0, 0.46).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	TurnState.set_flag("explore_scene", id)
+	var act: String = str(ACT_BY_SCENE.get(id, ""))
+	if not act.is_empty() and TurnState.current_act != act:
+		TurnState.start_act(act)
 	if _scene_title != null:
 		_scene_title.text = str(data.get("title", ""))
 		_scene_sub.text = str(data.get("subtitle", ""))
@@ -357,7 +390,7 @@ func _close_dialog_now() -> void:
 	_set_hint_visible(true)
 
 func _process(delta: float) -> void:
-	if not _locked and not chapter.visible:
+	if not _locked and not chapter.visible and not _present_layer_open():
 		var motion: Vector2 = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 		var key_x: float = float(int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A)))
 		var key_y: float = float(int(Input.is_physical_key_pressed(KEY_S)) - int(Input.is_physical_key_pressed(KEY_W)))
@@ -563,7 +596,7 @@ func _interact() -> void:
 	if _dialog_open:
 		_advance_dialog()
 		return
-	if _locked or chapter.visible:
+	if _locked or chapter.visible or _present_layer_open():
 		return
 	if not _nearest_npc.is_empty():
 		_say_npc(_nearest_npc)
@@ -580,11 +613,16 @@ func _set_hint_visible(value: bool) -> void:
 	if _hint_label != null:
 		_hint_label.visible = value
 
+func _present_layer_open() -> bool:
+	return _present_layer != null and _present_layer.visible
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _dialog_open:
 			_advance_dialog()
+			get_viewport().set_input_as_handled()
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _present_layer_open():
 			get_viewport().set_input_as_handled()
 
 func _say_npc(npc: Dictionary) -> void:
@@ -598,25 +636,20 @@ func _say_npc(npc: Dictionary) -> void:
 		if count == 0:
 			toast("认识了一个人 · " + who)
 
-	# 出示物证分支：持有指定物证且尚未出示过，递出后给回复与新物证。
+	# 出示物证分支：尚未出示过，且手里有物证 → 进入选择层让玩家挑；空手走交谈台词。
 	var present: Dictionary = npc.get("present", {}) as Dictionary
 	var present_ev: String = str(present.get("evidence", ""))
 	var present_flag: String = "presented_" + person
-	if puzzle != null and not present_ev.is_empty() and puzzle.has_evidence(present_ev) and not TurnState.has_flag(present_flag):
-		TurnState.set_flag(present_flag, true)
-		var grant: String = str(present.get("grants_evidence", ""))
-		var granted_name: String = ""
-		if not grant.is_empty() and puzzle.add_evidence(grant):
-			granted_name = puzzle.evidence_name(grant)
-			_play_pickup(npc.get("pos", Vector2.ZERO) as Vector2, granted_name)
-			_save_progress()
-		say(str(present.get("reply", "……")), who)
-		if not granted_name.is_empty():
-			toast("出示物证 · 得到 " + granted_name)
-		else:
-			toast("出示物证 · " + puzzle.evidence_name(present_ev))
-		return
+	if not present_ev.is_empty() and not TurnState.has_flag(present_flag):
+		if puzzle != null and not puzzle.all_evidence().is_empty():
+			_open_present_layer(npc)
+			return
+	_say_npc_plain(npc)
 
+func _say_npc_plain(npc: Dictionary) -> void:
+	var person: String = str(npc.get("id", ""))
+	var who: String = str(npc.get("name", "他"))
+	var count: int = int(_talk_count.get("npc_" + person, 0))
 	# 物证感知分支：持有 / 未持有指定物证时说不同的话。
 	var need: String = str(npc.get("needs_evidence", ""))
 	var text: String = str(npc.get("line", "……"))
@@ -633,6 +666,98 @@ func _say_npc(npc: Dictionary) -> void:
 		elif count > 0 and npc.has("line2"):
 			text = str(npc.get("line2"))
 	say(text, who)
+
+# 出示选择层：列出当前持有物证，挑错给拒绝台词，物证不消耗（R077/R088）。
+func _build_present_layer() -> void:
+	_present_layer = CanvasLayer.new()
+	_present_layer.layer = 120
+	add_child(_present_layer)
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.04, 0.05, 0.06, 0.62)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_present_layer.add_child(dim)
+	_present_panel = Panel.new()
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.07, 0.08, 0.97)
+	sb.border_color = Color(SKIN.GOLD, 0.40)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(8)
+	_present_panel.add_theme_stylebox_override("panel", sb)
+	_present_panel.position = Vector2(270, 150)
+	_present_panel.size = Vector2(420, 300)
+	_present_layer.add_child(_present_panel)
+	var title: Label = SKIN.make_label("", 15, SKIN.GOLD)
+	title.position = Vector2(24, 18)
+	_present_panel.add_child(title)
+	title.name = "PresentTitle"
+	_present_list = Control.new()
+	_present_list.position = Vector2(24, 56)
+	_present_list.size = Vector2(372, 180)
+	_present_panel.add_child(_present_list)
+	var chat_btn: Button = SKIN.make_button("先聊两句", 12, 160.0, 28.0)
+	chat_btn.position = Vector2(24, 252)
+	chat_btn.pressed.connect(_present_pick.bind(""))
+	_present_panel.add_child(chat_btn)
+	_present_layer.visible = false
+
+func _open_present_layer(npc: Dictionary) -> void:
+	if _present_layer == null:
+		_build_present_layer()
+	_present_npc = npc
+	var who: String = str(npc.get("name", "他"))
+	var title: Label = _present_panel.get_node("PresentTitle") as Label
+	title.text = "出示物证给「" + who + "」"
+	for child in _present_list.get_children():
+		_present_list.remove_child(child)
+		child.queue_free()
+	var held: Array[String] = puzzle.all_evidence()
+	var row: int = 0
+	for ev in held:
+		var btn: Button = SKIN.make_button(puzzle.evidence_name(ev), 12, 180.0, 30.0)
+		btn.position = Vector2((row % 2) * 188, (row / 2) * 36)
+		btn.pressed.connect(_present_pick.bind(ev))
+		_present_list.add_child(btn)
+		row += 1
+	_present_layer.visible = true
+
+func _close_present_layer() -> void:
+	if _present_layer != null:
+		_present_layer.visible = false
+
+func _present_pick(ev: String) -> void:
+	if _present_npc.is_empty():
+		return
+	var present: Dictionary = _present_npc.get("present", {}) as Dictionary
+	var person: String = str(_present_npc.get("id", ""))
+	var who: String = str(_present_npc.get("name", "他"))
+	var target: String = str(present.get("evidence", ""))
+	if ev.is_empty():
+		_close_present_layer()
+		_say_npc_plain(_present_npc)
+		return
+	if ev == target:
+		TurnState.set_flag("presented_" + person, true)
+		var grant: String = str(present.get("grants_evidence", ""))
+		var granted_name: String = ""
+		if not grant.is_empty() and puzzle.add_evidence(grant):
+			granted_name = puzzle.evidence_name(grant)
+			_play_pickup(_present_npc.get("pos", Vector2.ZERO) as Vector2, granted_name)
+			_save_progress()
+		_close_present_layer()
+		say(str(present.get("reply", "……")), who)
+		if not granted_name.is_empty():
+			toast("出示物证 · 得到 " + granted_name)
+		else:
+			toast("出示物证 · " + puzzle.evidence_name(target))
+		return
+	# 错配：两件物证仍在手里，只给拒绝台词；错配台词按次数轮换。
+	var lines: Array = present.get("wrong_lines", [])
+	var used: int = int(_present_wrong_count.get(person, 0))
+	_present_wrong_count[person] = used + 1
+	var line: String = str(lines[used % lines.size()]) if not lines.is_empty() else "他看看这件东西，摇了摇头，像是不认识。"
+	_close_present_layer()
+	say(line, who)
 
 func _use_spot(spot: Dictionary) -> void:
 	var kind: String = str(spot.get("kind", "talk"))
@@ -653,6 +778,7 @@ func _use_spot(spot: Dictionary) -> void:
 					say("这处已经记过了，换个地方再找找。", "手记")
 				elif puzzle.add_evidence(ev):
 					TurnState.unlock_item(arg)
+					TurnState.note_progress()
 					_play_pickup(at, puzzle.evidence_name(ev))
 					say(label + "。我把它记进了手记。", "手记")
 					toast("手记 +1 · " + puzzle.evidence_name(ev))
@@ -667,12 +793,18 @@ func _use_spot(spot: Dictionary) -> void:
 					toast("手记 +1 · " + label)
 		"combo":
 			_use_combo(spot)
+		"ending_review":
+			var tier: String = TurnState.ending_tier
+			if tier.is_empty():
+				tier = TurnState.settle_collection_tier(puzzle.all_evidence().size(), puzzle.all_clues().size())
+			var ending: Dictionary = Data.ending(tier)
+			say(str(ending.get("title", "")) + "\n" + str(ending.get("body", "")), "旁白")
 		"examine":
 			var ex_lock: Dictionary = spot.get("lock", {}) as Dictionary
 			if puzzle != null and not ex_lock.is_empty():
 				var ex_state: Dictionary = puzzle.lock_state(ex_lock)
 				if not bool(ex_state.get("ok", true)):
-					_report_locked(ex_state)
+					_report_locked(ex_state, "examine")
 					return
 			var ex_text: String = arg
 			if not first_time and spot.has("arg2"):
@@ -693,7 +825,7 @@ func _use_spot(spot: Dictionary) -> void:
 			if puzzle != null and not dream_lock.is_empty():
 				var dream_state: Dictionary = puzzle.lock_state(dream_lock)
 				if not bool(dream_state.get("ok", true)):
-					_report_locked(dream_state)
+					_report_locked(dream_state, "dream")
 					return
 			toast("好像睡着了……")
 			_enter_dream(arg)
@@ -713,11 +845,11 @@ func _gate_navigate(to: String, spawn_name: String, anim: String, lock: Dictiona
 	if puzzle != null and not lock.is_empty():
 		var state: Dictionary = puzzle.lock_state(lock)
 		if not bool(state.get("ok", true)):
-			_report_locked(state)
+			_report_locked(state, "exit")
 			return
 	travel(to, spawn_name, anim)
 
-func _report_locked(state: Dictionary) -> void:
+func _report_locked(state: Dictionary, context: String = "exit") -> void:
 	var missing: Array = state.get("missing", []) as Array
 	var names: PackedStringArray = PackedStringArray()
 	for mid in missing:
@@ -727,39 +859,30 @@ func _report_locked(state: Dictionary) -> void:
 		else:
 			names.append(puzzle.evidence_name(m))
 	var hint: String = str(state.get("hint", ""))
-	var text: String = "门锁着，进不去。还差：" + "、".join(names) + "。"
+	var prefix: String = "这件东西现在看不出名堂，还差：" if context == "examine" else "门锁着，进不去。还差："
+	var sig: String = context + ":" + ",".join(names)
+	var count: int = int(_refusal_count.get(sig, 0))
+	_refusal_count[sig] = count + 1
+	var text: String = prefix + "、".join(names) + "。"
 	if not hint.is_empty():
 		text += " " + hint
+	if count == 1:
+		text += " 先去别处找找。"
+	elif count >= 2:
+		text += " 再想想还差什么，别硬闯。"
 	say(text, "旁白")
 	toast("锁住了 · 缺 " + "、".join(names))
 
+# 组合一律走手记推理台：热点只给指向，不再自动判定（R076）。
 func _use_combo(spot: Dictionary) -> void:
 	var combo: Dictionary = spot.get("combo", {}) as Dictionary
-	var a: String = str(combo.get("a", ""))
-	var b: String = str(combo.get("b", ""))
 	var clue: String = str(combo.get("clue", ""))
 	if puzzle == null:
 		return
 	if puzzle.has_clue(clue):
 		say("这条推论已经记在手记里了。", "推论")
 		return
-	var missing: PackedStringArray = PackedStringArray()
-	if not puzzle.has_evidence(a):
-		missing.append(puzzle.evidence_name(a))
-	if not puzzle.has_evidence(b):
-		missing.append(puzzle.evidence_name(b))
-	if not missing.is_empty():
-		say("还差两件物证才能对上：" + "、".join(missing) + "。先在这附近找找。", "旁白")
-		toast("组合失败 · 缺 " + "、".join(missing))
-		return
-	var got: String = puzzle.try_combine(a, b)
-	if got.is_empty():
-		say("这两件东西对在一起，暂时还看不出名堂。", "旁白")
-		return
-	_play_pickup(spot.get("pos", Vector2.ZERO) as Vector2, puzzle.clue_name(got))
-	say("推论出来了：" + puzzle.clue_name(got) + "。" + puzzle.clue_text(got), "推论")
-	toast("新推论 · " + puzzle.clue_name(got))
-	_save_progress()
+	say(str(spot.get("arg", "")) + "（按 I 打开手记推理台，把这两件物证放进槽里对上。）", "旁白")
 
 func _play_pickup(at_world: Vector2, text: String) -> void:
 	if fx == null or _pickup_busy:
@@ -814,7 +937,7 @@ func _turn_dream_off() -> void:
 func _toggle_journal() -> void:
 	if Journal == null:
 		return
-	if _locked or _dialog_open:
+	if _locked or _dialog_open or _present_layer_open():
 		return
 	if JournalUI.is_open():
 		JournalUI.close()
@@ -832,7 +955,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_toggle_journal()
 		get_viewport().set_input_as_handled()
 	elif key_event.physical_keycode == KEY_ESCAPE:
-		if JournalUI.is_open():
+		if _present_layer_open():
+			_close_present_layer()
+		elif JournalUI.is_open():
 			JournalUI.close()
 		get_viewport().set_input_as_handled()
 	elif key_event.physical_keycode == KEY_SPACE:
@@ -859,9 +984,12 @@ func _save_progress() -> void:
 	if result != OK:
 		push_warning("世界进度保存失败：" + error_string(result))
 
-func _load_progress() -> void:
+func _load_progress() -> bool:
 	var file: ConfigFile = ConfigFile.new()
 	if file.load(SAVE_FILE) != OK:
-		return
+		return false
 	var raw: String = str(file.get_value("world", "v3_state", ""))
-	TurnState.restore_snapshot(raw)
+	return TurnState.restore_snapshot(raw)
+
+func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_FILE)

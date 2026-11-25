@@ -139,6 +139,21 @@ func settle_ending() -> String:
 		cg_unlocked.append(ending_tier)
 	return ending_tier
 
+# 终章按收集度分档：clear 物证≥8 且推论≥4；half 物证≥5 或推论≥3；其余 soft。
+func settle_collection_tier(evidence_n: int, clue_n: int) -> String:
+	if evidence_n >= 8 and clue_n >= 4:
+		ending_tier = "clear"
+	elif evidence_n >= 5 or clue_n >= 3:
+		ending_tier = "half"
+	else:
+		ending_tier = "soft"
+	set_flag("ending_tier", ending_tier)
+	if not cg_unlocked.has(ending_tier):
+		cg_unlocked.append(ending_tier)
+	hint_changed.emit(hint_index)
+	journal_changed.emit()
+	return ending_tier
+
 func mark_letter(index: int) -> void:
 	if not letters_read.has(index):
 		letters_read.append(index)

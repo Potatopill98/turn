@@ -60,6 +60,15 @@ const COMBOS: Dictionary = {
 	"ev_shoes|ev_ticket": "cl_return",
 }
 
+# 推论出口去向（锁 / examine / 终章回顾），详情页标注用。
+const CLUE_USAGE: Dictionary = {
+	"cl_score": "开锁：凭它下到地下室；琴箱刻字对照",
+	"cl_lamp": "开锁：凭它进终章灯火；秋千入梦条件之一",
+	"cl_tape": "对照：路口旧磁带机",
+	"cl_leave": "对照：厂房工装名牌",
+	"cl_return": "对照：车站站台裂缝",
+}
+
 const FLAG_EVIDENCE: String = "pz_evidence"
 const FLAG_CLUE: String = "pz_clues"
 const FLAG_FRESH: String = "pz_fresh"
@@ -99,6 +108,9 @@ func clue_name(id: String) -> String:
 
 func clue_text(id: String) -> String:
 	return str(CLUE_TEXTS.get(id, ""))
+
+func clue_usage(id: String) -> String:
+	return str(CLUE_USAGE.get(id, "暂时还用不上。"))
 
 # 反查一条推论由哪两件物证合成（无序，返回两个物证 id）。
 func clue_sources(id: String) -> Array[String]:
@@ -143,6 +155,24 @@ func try_combine(a: String, b: String) -> String:
 		_fresh.append(clue)
 	_save()
 	return clue
+
+# 推理台提交：返回 {ok, clue, reason}。错解不消耗物证、不产生推论。
+func combine_attempt(a: String, b: String) -> Dictionary:
+	if a == b:
+		return {"ok": false, "clue": "", "reason": "这是同一件东西，得拿两件不同的物证来比。"}
+	if not has_evidence(a) or not has_evidence(b):
+		return {"ok": false, "clue": "", "reason": "手里还没把这两件都捡到。"}
+	var key: String = _pair_key(a, b)
+	if not COMBOS.has(key):
+		return {"ok": false, "clue": "", "reason": "这两件各说各的，凑不到一处去。"}
+	var clue: String = str(COMBOS[key])
+	if _clues.has(clue):
+		return {"ok": false, "clue": "", "reason": "这条推论已经记在手记里了。"}
+	_clues.append(clue)
+	if not _fresh.has(clue):
+		_fresh.append(clue)
+	_save()
+	return {"ok": true, "clue": clue, "reason": ""}
 
 func add_clue(id: String) -> bool:
 	if id.is_empty() or _clues.has(id):

@@ -8,6 +8,7 @@ extends Node
 const PlayerState = preload("res://world/player_state.gd")
 const WorldData = preload("res://world/world_data.gd")
 const PuzzleState = preload("res://world/puzzle_state.gd")
+const Data = preload("res://scripts/turn_data.gd")
 const GRID: float = 16.0
 
 var world = null
@@ -52,6 +53,10 @@ func _ready() -> void:
 	await _lock_world_checks()
 	await _cross_scene_chain()
 	await _new_puzzle_chains()
+	_combo_bench_checks()
+	await _present_flow_checks()
+	_ending_tier_checks()
+	await _title_checks()
 	_random_rounds()
 	_report()
 
@@ -98,7 +103,7 @@ func _static_checks() -> void:
 		for spot in data.get("spots", []) as Array:
 			var s: Dictionary = spot as Dictionary
 			var kind: String = str(s.get("kind", ""))
-			if not (kind in ["talk", "item", "travel", "story", "dream", "wake", "combo", "examine"]):
+			if not (kind in ["talk", "item", "travel", "story", "dream", "wake", "combo", "examine", "ending_review"]):
 				_fail("%s 热点类型非法 %s" % [scene_id, kind])
 			if kind == "travel" and not scenes.has(str(s.get("arg", ""))):
 				_fail("%s 热点 travel 目标不存在 %s" % [scene_id, str(s.get("arg", ""))])
@@ -473,6 +478,13 @@ func _wiring_checks() -> void:
 					_fail("%s NPC %s 出示未知物证 %s" % [scene_id, str(n.get("name", "")), pe])
 				if str(present.get("reply", "")).is_empty():
 					_fail("%s NPC %s 出示后缺回复台词" % [scene_id, str(n.get("name", ""))])
+				var wrong_lines: Array = present.get("wrong_lines", []) as Array
+				if wrong_lines.size() < 2:
+					_fail("%s NPC %s 错配拒绝台词应 ≥2 条，实际 %d" % [scene_id, str(n.get("name", "")), wrong_lines.size()])
+				var empty_line: String = str(n.get("lines_without", ""))
+				for wl in wrong_lines:
+					if str(wl) == empty_line:
+						_fail("%s NPC %s 错配台词与空手台词逐字相同" % [scene_id, str(n.get("name", ""))])
 				var grant: String = str(present.get("grants_evidence", ""))
 				if not grant.is_empty() and not evidence_reg.has(grant):
 					_fail("%s NPC %s 出示奖励未知物证 %s" % [scene_id, str(n.get("name", "")), grant])
@@ -680,8 +692,8 @@ func _cross_scene_chain() -> void:
 	if combo_spot.is_empty():
 		_fail("链上找不到 cl_score 组合热点")
 		return
-	world._use_combo(combo_spot)
-	await get_tree().create_timer(0.65).timeout
+	world.puzzle.try_combine("ev_note", "ev_photo")
+	await get_tree().process_frame
 	if world.puzzle.has_clue("cl_score"):
 		_ok()
 		print("  两件物证合成推论 cl_score  OK")
@@ -735,8 +747,8 @@ func _new_puzzle_chains() -> void:
 	if leave_spot.is_empty():
 		_fail("链 A 找不到 cl_leave 组合热点")
 	else:
-		world._use_combo(leave_spot)
-		await get_tree().create_timer(0.65).timeout
+		world.puzzle.try_combine("ev_letter", "ev_draft")
+		await get_tree().process_frame
 		if world.puzzle.has_clue("cl_leave"):
 			_ok()
 			print("  A3 ev_letter+ev_draft 合成 cl_leave  OK")
@@ -766,8 +778,8 @@ func _new_puzzle_chains() -> void:
 	if return_spot.is_empty():
 		_fail("链 B 找不到 cl_return 组合热点")
 	else:
-		world._use_combo(return_spot)
-		await get_tree().create_timer(0.65).timeout
+		world.puzzle.try_combine("ev_ticket", "ev_shoes")
+		await get_tree().process_frame
 		if world.puzzle.has_clue("cl_return"):
 			_ok()
 			print("  B2 ev_ticket+ev_shoes 合成 cl_return  OK")
@@ -871,6 +883,167 @@ func _persistence_checks() -> void:
 		print("  旧档（无 pz_* 键）兼容读回，物证为空数组  OK")
 	else:
 		_fail("旧档缺键时应读为空状态，不报错")
+
+func _combo_bench_checks() -> void:
+	print("== 推理台正解 / 错解断言（R076/R077）==")
+	TurnState.reset()
+	world.puzzle.reload()
+	var p: RefCounted = world.puzzle
+	var recipes: Array = [
+		["ev_note", "ev_photo", "cl_score"],
+		["ev_screw", "ev_shoes", "cl_lamp"],
+		["ev_list", "ev_tape", "cl_tape"],
+		["ev_draft", "ev_letter", "cl_leave"],
+		["ev_shoes", "ev_ticket", "cl_return"],
+	]
+	var recipe_ok: int = 0
+	for r in recipes:
+		p.add_evidence(str(r[0]))
+		p.add_evidence(str(r[1]))
+		var result: Dictionary = p.combine_attempt(str(r[0]), str(r[1]))
+		if bool(result.get("ok", false)) and p.has_clue(str(r[2])):
+			recipe_ok += 1
+		else:
+			_fail("正解 %s+%s 应推出 %s，实际：%s" % [str(r[0]), str(r[1]), str(r[2]), str(result)])
+	if recipe_ok == recipes.size():
+		_ok()
+		print("  5 条配方全部正解出推论  OK")
+	else:
+		_fail("正解断言通过 %d / %d" % [recipe_ok, recipes.size()])
+
+	TurnState.reset()
+	p.reload()
+	for eid in PuzzleState.EVIDENCE_NAMES.keys():
+		p.add_evidence(str(eid))
+	var ids: Array[String] = p.all_evidence()
+	var wrong: Array = []
+	for i in ids.size():
+		for j in range(i + 1, ids.size()):
+			var pair: String = ids[i] + "|" + ids[j] if ids[i] <= ids[j] else ids[j] + "|" + ids[i]
+			if not PuzzleState.COMBOS.has(pair):
+				wrong.append([ids[i], ids[j]])
+	var sample: Array = wrong.slice(0, maxi(10, wrong.size()))
+	var wrong_ok: int = 0
+	for pair in sample:
+		var a: String = str(pair[0])
+		var b: String = str(pair[1])
+		var result: Dictionary = p.combine_attempt(a, b)
+		if not bool(result.get("ok", false)) and not str(result.get("reason", "")).is_empty() and p.has_evidence(a) and p.has_evidence(b):
+			wrong_ok += 1
+		else:
+			_fail("错解 %s+%s 应失败、给理由且保留物证：%s" % [a, b, str(result)])
+	var same: Dictionary = p.combine_attempt("ev_note", "ev_note")
+	if not bool(same.get("ok", false)) and not str(same.get("reason", "")).is_empty():
+		wrong_ok += 1
+	else:
+		_fail("同一件选两次应失败并给理由")
+	if wrong_ok == sample.size() + 1:
+		_ok()
+		print("  错解抽样 %d 对 + 同件自比 1 对：全部失败、有反馈、物证仍在  OK" % sample.size())
+	else:
+		_fail("错解断言通过 %d / %d" % [wrong_ok, sample.size() + 1])
+
+func _present_flow_checks() -> void:
+	print("== 出示选择层路径（R077/R088）==")
+	TurnState.reset()
+	world.puzzle.reload()
+	world.force_scene("playground_night")
+	await get_tree().process_frame
+	var npc: Dictionary = {}
+	for candidate in world.current_scene_data().get("npcs", []) as Array:
+		var c: Dictionary = candidate as Dictionary
+		if str(c.get("id", "")) == "p_zhou":
+			npc = c
+	if npc.is_empty():
+		_fail("夜场找不到 p_zhou")
+		return
+	world._say_npc(npc)
+	if world._present_layer_open():
+		_fail("空手时不应打开出示选择层")
+	else:
+		_ok()
+		print("  空手走交谈台词，不开选择层  OK")
+	world._advance_dialog()
+
+	world.puzzle.add_evidence("ev_letter")
+	world._say_npc(npc)
+	if not world._present_layer_open():
+		_fail("持有物证时应打开出示选择层")
+	else:
+		_ok()
+		print("  持有物证打开选择层  OK")
+	world._present_pick("ev_letter")
+	if world.puzzle.has_evidence("ev_letter") and not world.puzzle.has_evidence("ev_mirror") and world._dialog_open:
+		_ok()
+		print("  错配拒绝：物证仍在、不出镜子、给台词  OK")
+	else:
+		_fail("错配后物证被消耗或误发奖励")
+	world._advance_dialog()
+
+	world.puzzle.add_evidence("ev_shoes")
+	world._say_npc(npc)
+	world._present_pick("ev_shoes")
+	if world.puzzle.has_evidence("ev_mirror") and TurnState.has_flag("presented_p_zhou"):
+		_ok()
+		print("  正解出示：得到 ev_mirror 并登记已出示  OK")
+	else:
+		_fail("正解出示应得到 ev_mirror")
+
+func _ending_tier_checks() -> void:
+	print("== 终章收集度三档（R081）==")
+	TurnState.reset()
+	world.puzzle.reload()
+	var soft: String = TurnState.settle_collection_tier(0, 0)
+	if soft == "soft":
+		_ok()
+		print("  0 物证 0 推论 → soft 档  OK")
+	else:
+		_fail("低收集度应判 soft，实际 " + soft)
+	TurnState.reset()
+	var half: String = TurnState.settle_collection_tier(5, 1)
+	if half == "half":
+		_ok()
+		print("  中收集度 → half 档  OK")
+	else:
+		_fail("中收集度应判 half，实际 " + half)
+	TurnState.reset()
+	var clear: String = TurnState.settle_collection_tier(10, 5)
+	if clear == "clear":
+		_ok()
+		print("  全收集 → clear 档  OK")
+	else:
+		_fail("全收集应判 clear，实际 " + clear)
+	var titles: Dictionary = {}
+	for t in ["clear", "half", "soft"]:
+		var ending: Dictionary = Data.ending(t)
+		if str(ending.get("body", "")).is_empty():
+			_fail("终章档位 " + t + " 缺 body 文案")
+		titles[t] = str(ending.get("title", ""))
+	if titles["clear"] != titles["half"] and titles["half"] != titles["soft"]:
+		_ok()
+		print("  三档标题与正文互不相同  OK")
+	else:
+		_fail("三档收束文本没有区分度")
+
+func _title_checks() -> void:
+	print("== 标题界面（R082）==")
+	var packed: PackedScene = load("res://title/title.tscn") as PackedScene
+	if packed == null:
+		_fail("标题场景加载失败")
+		return
+	var title: Node = packed.instantiate()
+	add_child(title)
+	await get_tree().process_frame
+	var button_count: int = 0
+	for child in title.get_children():
+		if child is Button:
+			button_count += 1
+	if button_count == 3:
+		_ok()
+		print("  标题界面 3 个入口（继续 / 新游戏 / 退出）  OK")
+	else:
+		_fail("标题按钮数量应为 3，实际 %d" % button_count)
+	title.queue_free()
 
 func _report() -> void:
 	print("")
