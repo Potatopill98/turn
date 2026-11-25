@@ -1,0 +1,493 @@
+extends RefCounted
+
+# 探索模式的世界数据：19 个场景、可行走区、碰撞、热点、出口、NPC。
+# 全部用字符串路径 + 运行时 load，避免"图还没出"时 preload 直接编译失败。
+
+const ART: String = "res://art/"
+
+static func all() -> Dictionary:
+	var d: Dictionary = {}
+
+	# ---------------------------------------------------------------- 狼城
+	d["langcheng_room"] = {
+		"title": "狼城 · 七平米的出租屋",
+		"subtitle": "序章",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/狼城_七平米出租屋_夜.png",
+		"sky": Color("#141a22"),
+		"ground": Color("#2a2e35"),
+		"player_height": 88.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(150, 400, 700, 160)],
+		"blocks": [],
+		"spawn": Vector2(420, 520),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(360, 470), "label": "床", "kind": "talk", "arg": "床板硬得像桌面。我把外套垫在下面，躺下去，天花板就在眼前——七平米，连翻身都得先想好方向。"},
+			{"pos": Vector2(700, 430), "label": "窗外", "kind": "talk", "arg": "窗外是另一栋楼的墙。对面那扇窗也亮着，有人在里面走来走去，看不见脸。"},
+			{"pos": Vector2(620, 480), "label": "桌上的合同", "kind": "talk", "arg": "合同压在一只凉掉的饭盒底下。转正两个字，是这一整年最像样的东西。"},
+		],
+		"exits": [
+			{"pos": Vector2(560, 440), "to": "langcheng_office", "label": "出门 · 去公司", "spawn": "door"},
+			{"pos": Vector2(545, 545), "to": "town_gate", "label": "收行李 · 回镇上", "spawn": "bus"},
+		],
+	}
+
+	d["langcheng_office"] = {
+		"title": "狼城 · 凌晨两点的工位",
+		"subtitle": "序章",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/狼城_凌晨两点的工位.png",
+		"sky": Color("#10151c"),
+		"ground": Color("#272b31"),
+		"player_height": 86.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(150, 360, 660, 170)],
+		"blocks": [],
+		"spawn": Vector2(480, 500),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(420, 400), "label": "屏幕", "kind": "talk", "arg": "屏幕上是我改了十一版的方案。保存，关掉，再打开——其实一个字也没动。"},
+			{"pos": Vector2(660, 420), "label": "同事的椅子", "kind": "talk", "arg": "外套还搭在椅背上。人走了，杯子里的水还剩一半，杯壁已经不冒热气了。"},
+		],
+		"exits": [
+			{"pos": Vector2(480, 520), "to": "langcheng_factory", "label": "下楼 · 去厂里", "spawn": "door"},
+		],
+	}
+
+	d["langcheng_factory"] = {
+		"title": "狼城 · 罐头厂（尾声）",
+		"subtitle": "尾声",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/狼城_罐头厂_流水线.png",
+		"sky": Color("#181c1e"),
+		"ground": Color("#2c3033"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(620, 380, 290, 180)],
+		"blocks": [],
+		"spawn": Vector2(760, 530),
+		"spawns": {"door": Vector2(760, 530)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(620, 480), "label": "流水线", "kind": "talk", "arg": "一罐接一罐，从眼前过去，望不到头。每一罐都一模一样，连标签贴歪的角度都一样。"},
+			{"pos": Vector2(700, 380), "label": "挂着的工装", "kind": "talk", "arg": "蓝工装挂在钩上，袖口磨白了。名字牌是我自己贴的，写歪了，一直没换。"},
+			{"pos": Vector2(880, 520), "label": "水洼里的倒影", "kind": "talk", "arg": "灯在水里晃。人走过去，影子就散了。"},
+		],
+		"exits": [
+			{"pos": Vector2(860, 545), "to": "town_final", "label": "请假 · 回镇上", "spawn": "bus"},
+		],
+	}
+
+	# ---------------------------------------------------------------- 镇子
+	d["town_gate"] = {
+		"title": "镇口",
+		"subtitle": "归乡",
+		"bg": ART + "00_场景/02_镇口可玩空景.png",
+		"sky": Color("#b7c9cf"),
+		"ground": Color("#8f8a7c"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(70, 300, 820, 240)],
+		"blocks": [],
+		"spawn": Vector2(480, 470),
+		"spawns": {"bus": Vector2(480, 470), "gate": Vector2(480, 470)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(255, 325), "label": "副食店的招牌", "kind": "item", "arg": "e_sign"},
+			{"pos": Vector2(600, 356), "label": "脚下的路", "kind": "talk", "arg": "柏油在太阳底下发软。走了两步，鞋底粘起一点黑。跟十年前一模一样。"},
+		],
+		"exits": [
+			{"pos": Vector2(480, 300), "to": "town_road", "label": "往里走 · 老街", "spawn": "gate"},
+		],
+	}
+
+	d["town_road"] = {
+		"title": "小镇",
+		"subtitle": "整条镇子 · 可自由走",
+		"player_height": 76.0,
+		"npc_height": 82.0,
+		"bg": ART + "00_场景/14_小镇总图_等距.png",
+		"sky": Color("#d9d2bd"),
+		"ground": Color("#9a9482"),
+		"bounds": Rect2(0, 0, 1536, 1024),
+		"walk": [Rect2(80, 130, 1360, 630)],
+		"blocks": [
+			Rect2(395, 190, 210, 165),
+			Rect2(630, 100, 230, 205),
+			Rect2(1085, 295, 170, 130),
+			Rect2(895, 295, 160, 160),
+			Rect2(765, 445, 140, 130),
+			Rect2(370, 640, 150, 120),
+			Rect2(875, 555, 210, 130),
+			Rect2(815, 780, 150, 120),
+		],
+		"spawn": Vector2(700, 700),
+		"spawns": {
+			"gate": Vector2(700, 730),
+			"house": Vector2(360, 470),
+			"play": Vector2(880, 470),
+			"cross": Vector2(760, 690),
+		},
+		"props": [],
+		"npcs": [
+			{"name": "张成", "pos": Vector2(700, 630), "id": "p_zhang", "line": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。"},
+			{"name": "周德海", "pos": Vector2(340, 690), "id": "p_zhou", "line": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。"},
+		],
+		"spots": [
+			{"pos": Vector2(360, 440), "label": "老宅的门", "kind": "travel", "arg": "old_house_yard"},
+			{"pos": Vector2(258, 628), "label": "副食店", "kind": "talk", "arg": "柜台后面空着。货架上的橘子汽水摆得很整齐，价签是手写的。"},
+			{"pos": Vector2(880, 470), "label": "游乐场", "kind": "travel", "arg": "playground_day"},
+			{"pos": Vector2(660, 560), "label": "老街路灯", "kind": "item", "arg": "e_lamp"},
+			{"pos": Vector2(920, 690), "label": "池塘", "kind": "talk", "arg": "池塘边有一排石桥栏杆。水面很静，映着半边天。"},
+		],
+		"exits": [
+			{"pos": Vector2(660, 745), "to": "town_gate", "label": "回镇口", "spawn": "gate"},
+			{"pos": Vector2(360, 470), "to": "old_house_yard", "label": "进老宅院子", "spawn": "door"},
+			{"pos": Vector2(800, 655), "to": "street_cross", "label": "往路口", "spawn": "road"},
+			{"pos": Vector2(860, 455), "to": "playground_day", "label": "去游乐场", "spawn": "road"},
+			{"pos": Vector2(560, 725), "to": "town_final", "label": "镇口灯火", "spawn": "road"},
+		],
+	}
+	d["old_house_yard"] = {
+		"title": "老宅 · 门前",
+		"subtitle": "第一幕",
+		"bg": ART + "00_场景/08_归乡老宅门前.png",
+		"sky": Color("#c9cfc6"),
+		"ground": Color("#8a8272"),
+		"player_height": 92.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(90, 330, 780, 210)],
+		"blocks": [],
+		"spawn": Vector2(480, 470),
+		"spawns": {"door": Vector2(480, 470)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(480, 350), "label": "门", "kind": "travel", "arg": "house_hall"},
+			{"pos": Vector2(760, 400), "label": "门边的鞋", "kind": "talk", "arg": "门口摆着两双鞋。一双大的，一双小的，都摆得很正——像随时有人会回来穿。"},
+		],
+		"exits": [
+			{"pos": Vector2(480, 340), "to": "house_hall", "label": "进门", "spawn": "door"},
+			{"pos": Vector2(120, 500), "to": "town_road", "label": "回老街", "spawn": "house"},
+		],
+	}
+
+	d["house_hall"] = {
+		"title": "老宅 · 客厅与走廊",
+		"subtitle": "第一幕",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/老宅_客厅_可走.png",
+		"sky": Color("#b8b09c"),
+		"ground": Color("#8e8574"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(140, 300, 720, 230)],
+		"blocks": [],
+		"spawn": Vector2(480, 470),
+		"spawns": {"door": Vector2(480, 470)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(350, 300), "label": "墙上的老钟", "kind": "item", "arg": "e_clock"},
+			{"pos": Vector2(340, 340), "label": "布沙发", "kind": "talk", "arg": "坐垫塌下去一块，是固定坐着的那个人留下的形状。"},
+			{"pos": Vector2(440, 350), "label": "茶几上的半杯水", "kind": "talk", "arg": "水是凉的，杯壁上没有水汽。妈妈大概出门有一会儿了。"},
+			{"pos": Vector2(750, 330), "label": "上锁的琴箱 · 把手放上去", "kind": "dream", "arg": "dream_classroom"},
+		],
+		"exits": [
+			{"pos": Vector2(860, 480), "to": "old_house_yard", "label": "出门", "spawn": "door"},
+			{"pos": Vector2(120, 320), "to": "basement", "label": "下地下室", "spawn": "stairs"},
+		],
+	}
+	d["basement"] = {
+		"title": "老宅 · 地下室",
+		"subtitle": "记忆里，你已经站在琴箱旁边",
+		"bg": ART + "00_场景/07_地下室琴箱角落.png",
+		"sky": Color("#2a2b28"),
+		"ground": Color("#4b4a44"),
+		"player_height": 70.0,
+		"bounds": Rect2(0, 0, 1023, 691),
+		"walk": [Rect2(390, 320, 610, 340)],
+		"blocks": [],
+		"spawn": Vector2(760, 600),
+		"spawns": {"stairs": Vector2(760, 600)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(780, 470), "label": "落了灰的琴箱", "kind": "item", "arg": "e_shell"},
+			{"pos": Vector2(920, 520), "label": "堆着的旧报纸", "kind": "talk", "arg": "报纸的日期停在很多年前。最上面一张，头版是省歌舞团的招生启事。"},
+		],
+		"exits": [
+			{"pos": Vector2(440, 360), "to": "house_hall", "label": "上楼", "spawn": "door"},
+		],
+	}
+
+	d["playground_day"] = {
+		"title": "游乐场 · 白天",
+		"subtitle": "第二幕",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/游乐场_白天_地面.png",
+		"sky": Color("#cfd8d4"),
+		"ground": Color("#8e9378"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 420, 720, 160)],
+		"blocks": [],
+		"spawn": Vector2(200, 545),
+		"spawns": {"road": Vector2(200, 545)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(310, 460), "label": "秋千", "kind": "item", "arg": "e_screw"},
+			{"pos": Vector2(700, 470), "label": "告示牌", "kind": "talk", "arg": "告示牌上写着：游乐场设施维修中，请勿靠近。落款是三年前。"},
+			{"pos": Vector2(820, 500), "label": "纸壳堆", "kind": "talk", "arg": "纸壳被雨泡过又晒干，一层一层压在一起。最上面那只印着凤梨罐头的牌子。"},
+		],
+		"exits": [
+			{"pos": Vector2(120, 560), "to": "town_road", "label": "回老街", "spawn": "play"},
+		],
+	}
+
+	d["playground_night"] = {
+		"title": "游乐场 · 蓝调夜色",
+		"subtitle": "第二幕",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/游乐场_夜_地面.png",
+		"sky": Color("#1e2a38"),
+		"ground": Color("#2c3542"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 420, 720, 160)],
+		"blocks": [],
+		"spawn": Vector2(300, 545),
+		"spawns": {"day": Vector2(300, 545)},
+		"props": [],
+		"npcs": [
+			{"name": "周德海", "pos": Vector2(520, 540), "id": "p_zhou", "line": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。"},
+		],
+		"spots": [
+			{"pos": Vector2(700, 470), "label": "路灯", "kind": "item", "arg": "e_lamp"},
+			{"pos": Vector2(300, 480), "label": "秋千 · 坐上去", "kind": "dream", "arg": "dream_swing" }, {"pos": Vector2(340, 505), "label": "秋千的链子", "kind": "talk", "arg": "链子上的锈一层一层。摸上去，指腹会留下橙红的粉。"},
+			{"pos": Vector2(350, 520), "label": "松掉的螺丝", "kind": "item", "arg": "e_screw"},
+		],
+		"exits": [
+			{"pos": Vector2(120, 560), "to": "playground_day", "label": "等到白天", "spawn": "day"},
+		],
+	}
+
+	d["street_cross"] = {
+		"title": "搬家路口",
+		"subtitle": "第三幕",
+		"bg": ART + "00_场景/11_搬家路口.png",
+		"sky": Color("#c8c8bc"),
+		"ground": Color("#8b8778"),
+		"player_height": 88.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(70, 330, 820, 210)],
+		"blocks": [],
+		"spawn": Vector2(160, 480),
+		"spawns": {"road": Vector2(160, 480)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(430, 400), "label": "搬家清单", "kind": "item", "arg": "e_list"},
+			{"pos": Vector2(330, 430), "label": "旧磁带 · 听一段", "kind": "dream", "arg": "dream_dirt_road"},
+			{"pos": Vector2(620, 430), "label": "手机里的照片", "kind": "item", "arg": "e_phone"},
+		],
+		"exits": [
+			{"pos": Vector2(120, 500), "to": "town_road", "label": "回老街", "spawn": "cross"},
+			{"pos": Vector2(820, 470), "to": "town_final", "label": "去镇口", "spawn": "road"},
+		],
+	}
+
+	d["town_final"] = {
+		"title": "镇口 · 灯火",
+		"subtitle": "终章",
+		"bg": ART + "00_场景/12_终章镇口灯火.png",
+		"sky": Color("#20242c"),
+		"ground": Color("#474a46"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(80, 330, 800, 200)],
+		"blocks": [],
+		"spawn": Vector2(480, 480),
+		"spawns": {"road": Vector2(480, 480), "bus": Vector2(480, 480)},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(300, 430), "label": "三口箱子", "kind": "talk", "arg": "三口箱子摆在地上：一口装衣服，一口装书，一口空着。空的那口，是留给还没决定的东西。"},
+			{"pos": Vector2(660, 430), "label": "停在四点十分的钟", "kind": "item", "arg": "e_watch"},
+		],
+		"exits": [
+			{"pos": Vector2(480, 520), "to": "house_hall", "label": "回家", "spawn": "door"},
+			{"pos": Vector2(100, 500), "to": "town_road", "label": "再走一遍老街", "spawn": "gate"},
+		],
+	}
+
+	# ---------------------------------------------------------------- 梦境
+	d["dream_classroom"] = {
+		"title": "梦 · 教室",
+		"subtitle": "第一幕 · 老陈的记忆",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/梦_教室_过道.png",
+		"sky": Color("#6b5640"),
+		"ground": Color("#8a7154"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(370, 340, 220, 190)],
+		"blocks": [],
+		"spawn": Vector2(480, 510),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(420, 380), "label": "讲台", "kind": "talk", "arg": "讲台上摊着一本卷了边的课本。粉笔灰落在上面，像一层薄雪。"},
+			{"pos": Vector2(560, 430), "label": "起哄的同学", "kind": "talk", "arg": "几个人围着最后一排笑。被围着的那个人低着头，肩膀在抖。"},
+			{"pos": Vector2(390, 470), "label": "歪掉的椅子", "kind": "talk", "arg": "椅子被撞得歪过去，桌上是几张揉皱的纸。"},
+		],
+		"exits": [
+			{"pos": Vector2(560, 545), "to": "dream_alley", "label": "往前 · 巷子", "spawn": ""},
+		],
+		"dream": true,
+	}
+	d["dream_alley"] = {
+		"title": "梦 · 巷子",
+		"subtitle": "第一幕 · 老陈的记忆",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/梦_巷子_烂菜叶与裂口的手.png",
+		"sky": Color("#5f5140"),
+		"ground": Color("#7d6a50"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 420, 720, 160)],
+		"blocks": [],
+		"spawn": Vector2(480, 540),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(760, 470), "label": "墙角", "kind": "talk", "arg": "墙根堆着几片烂菜叶。有人蹲在那里，手撑着墙，指节上有一道口子。"},
+		],
+		"exits": [
+			{"pos": Vector2(150, 550), "to": "dream_postbox", "label": "往前 · 邮筒", "spawn": ""},
+		],
+		"dream": true,
+	}
+
+	d["dream_postbox"] = {
+		"title": "梦 · 邮筒前",
+		"subtitle": "第一幕 · 老陈的记忆",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/梦_邮筒前_折了又展开的通知.png",
+		"sky": Color("#6a5a44"),
+		"ground": Color("#867357"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 430, 700, 150)],
+		"blocks": [],
+		"spawn": Vector2(480, 540),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(520, 490), "label": "邮筒", "kind": "talk", "arg": "绿色的邮筒，漆掉了一块。手里的纸被折出十字痕，又展开，又折上。"},
+			{"pos": Vector2(760, 520), "label": "地上的纸", "kind": "talk", "arg": "纸角被风掀起一点，又落回去。上面那行字，看了很多遍，还是不敢确认。"},
+		],
+		"exits": [
+			{"pos": Vector2(150, 555), "to": "dream_box", "label": "往前 · 木箱", "spawn": ""},
+		],
+		"dream": true,
+	}
+
+	d["dream_box"] = {
+		"title": "梦 · 木箱",
+		"subtitle": "第一幕 · 老陈的记忆",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/梦_木箱_锁上的那一下.png",
+		"sky": Color("#6d5840"),
+		"ground": Color("#8b6f4f"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 430, 700, 150)],
+		"blocks": [],
+		"spawn": Vector2(480, 540),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(560, 470), "label": "柜台下的木箱", "kind": "talk", "arg": "箱盖半开，里面是一摞旧报纸。一只手把信封放进去，然后，咔哒一声，锁上了。"},
+		],
+		"exits": [
+			{"pos": Vector2(150, 555), "to": "", "label": "醒过来", "spawn": "", "wake": true},
+		],
+		"dream": true,
+	}
+
+	d["dream_swing"] = {
+		"title": "梦 · 秋千",
+		"subtitle": "第二幕 · 老周的记忆",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/梦_秋千_囡囡荡得很高.png",
+		"sky": Color("#6d5038"),
+		"ground": Color("#8f6845"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 430, 720, 150)],
+		"blocks": [],
+		"spawn": Vector2(480, 540),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(480, 470), "label": "荡到最高点", "kind": "talk", "arg": "小红鞋在黄昏里划出一道弧。两个小辫飞起来，笑声比人还高。"},
+			{"pos": Vector2(760, 500), "label": "秋千的链子", "kind": "item", "arg": "e_screw"},
+		],
+		"exits": [
+			{"pos": Vector2(150, 555), "to": "", "label": "醒过来", "spawn": "", "wake": true},
+		],
+		"dream": true,
+	}
+
+	d["dream_dirt_road"] = {
+		"title": "梦 · 土路",
+		"subtitle": "第三幕 · 吴叔的记忆",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/梦_土路_蛙声与两个人的影子.png",
+		"sky": Color("#7a6440"),
+		"ground": Color("#9a7c4c"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 430, 720, 150)],
+		"blocks": [],
+		"spawn": Vector2(480, 540),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(480, 490), "label": "两个人的影子", "kind": "talk", "arg": "夕阳把两个背书包的影子拉得很长。一个快，一个慢，走着走着就并到一起了。"},
+			{"pos": Vector2(760, 500), "label": "水渠", "kind": "talk", "arg": "水渠里有蛙声，一阵一阵。稻田的味道是热的。"},
+		],
+		"exits": [
+			{"pos": Vector2(150, 555), "to": "dream_station", "label": "往前 · 车站", "spawn": ""},
+		],
+		"dream": true,
+	}
+
+	d["dream_station"] = {
+		"title": "梦 · 车站",
+		"subtitle": "第三幕 · 吴叔的记忆",
+		"bg": ART + "10_v3_待出图/06_全文叙事/02_章节背景/梦_车站_她没有回头.png",
+		"sky": Color("#5c5a4e"),
+		"ground": Color("#7b7866"),
+		"player_height": 84.0,
+		"bounds": Rect2(0, 0, 960, 600),
+		"walk": [Rect2(120, 430, 720, 150)],
+		"blocks": [],
+		"spawn": Vector2(480, 540),
+		"spawns": {},
+		"props": [],
+		"npcs": [],
+		"spots": [
+			{"pos": Vector2(700, 470), "label": "车门", "kind": "talk", "arg": "绿皮车的门开着。提行李的人上了车，一直没有回头。"},
+			{"pos": Vector2(320, 500), "label": "站台的水泥地", "kind": "talk", "arg": "地上有一道很深的裂缝，被水冲得发亮。广播响了两遍，谁的名字都没念清。"},
+		],
+		"exits": [
+			{"pos": Vector2(150, 555), "to": "", "label": "醒过来", "spawn": "", "wake": true},
+		],
+		"dream": true,
+	}
+
+	return d

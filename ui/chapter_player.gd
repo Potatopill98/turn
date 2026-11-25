@@ -142,7 +142,30 @@ func play(id: String, on_done: Callable = Callable()) -> void:
 		if on_done.is_valid():
 			on_done.call()
 		return
-	_beats = entry.get("beats", []) as Array
+	_start(entry.get("beats", []) as Array, on_done)
+
+# 探索模式用：只播某个 act 的一段 beat（首访某个地点时播 2~6 条）。
+func play_range(id: String, from_beat: int, to_beat: int, on_done: Callable = Callable()) -> void:
+	var entry: Dictionary = Story.act(id)
+	if entry.is_empty():
+		if on_done.is_valid():
+			on_done.call()
+		return
+	var all_beats: Array = entry.get("beats", []) as Array
+	var slice: Array = []
+	var i: int = maxi(0, from_beat)
+	var stop: int = mini(all_beats.size(), to_beat)
+	while i < stop:
+		slice.append(all_beats[i])
+		i += 1
+	if slice.is_empty():
+		if on_done.is_valid():
+			on_done.call()
+		return
+	_start(slice, on_done)
+
+func _start(beats: Array, on_done: Callable) -> void:
+	_beats = beats
 	_on_done = on_done
 	_index = _next_index(0)
 	_playing = true
