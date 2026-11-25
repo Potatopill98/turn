@@ -225,11 +225,11 @@ func _build_people() -> void:
 		var known: bool = TurnState.people.has(id)
 		var column: int = index % 2
 		var row: int = index / 2
-		var position := Vector2(44 + column * 206, 70 + row * 112)
+		var position := Vector2(44 + column * 206, 70 + row * 94)
 		var card := Button.new()
 		card.position = position
-		card.size = Vector2(200, 104)
-		card.custom_minimum_size = Vector2(200, 104)
+		card.size = Vector2(200, 88)
+		card.custom_minimum_size = Vector2(200, 88)
 		card.add_theme_stylebox_override("normal", SKIN.style(Color(0.92, 0.87, 0.77, 0.55), Color(0.55, 0.45, 0.30, 0.35), 1, 4))
 		card.add_theme_stylebox_override("hover", SKIN.style(Color(0.96, 0.91, 0.81, 0.85), SKIN.GOLD_DIM, 1, 4))
 		card.add_theme_stylebox_override("pressed", SKIN.style(SKIN.GOLD, SKIN.GOLD, 1, 4))
@@ -242,26 +242,26 @@ func _build_people() -> void:
 		var portrait_path: String = str(person.get("portrait", ""))
 		var texture: Texture2D = Data.texture(portrait_path)
 		if texture != null:
-			var portrait := SKIN.make_texture(texture, Rect2(8, 8, 88, 88))
+			var portrait := SKIN.make_texture(texture, Rect2(8, 8, 72, 72))
 			card.add_child(portrait)
 		else:
 			var placeholder := ColorRect.new()
 			placeholder.color = Color(0.35, 0.32, 0.28, 0.5)
 			placeholder.position = Vector2(8, 8)
-			placeholder.size = Vector2(88, 88)
+			placeholder.size = Vector2(72, 72)
 			placeholder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			card.add_child(placeholder)
 
 		var name_label := SKIN.make_label(str(person.get("name", "？")), 15, SKIN.INK)
-		name_label.position = Vector2(102, 10)
-		name_label.size.x = 92
+		name_label.position = Vector2(88, 8)
+		name_label.size.x = 104
 		card.add_child(name_label)
-		var tag_label := SKIN.make_label(str(person.get("tag", "")), 10, Color(0.35, 0.30, 0.24, 0.9), 92.0)
-		tag_label.position = Vector2(102, 32)
+		var tag_label := SKIN.make_label(str(person.get("tag", "")), 10, Color(0.35, 0.30, 0.24, 0.9), 104.0)
+		tag_label.position = Vector2(88, 30)
 		card.add_child(tag_label)
 		if not known:
 			var lock := SKIN.make_label("未结识", 11, Color(0.45, 0.40, 0.33, 0.85))
-			lock.position = Vector2(102, 76)
+			lock.position = Vector2(88, 62)
 			card.add_child(lock)
 			card.modulate = Color(1, 1, 1, 0.55)
 		card.pressed.connect(_select_person.bind(id))

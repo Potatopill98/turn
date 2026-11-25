@@ -5,6 +5,7 @@ const Data = preload("res://scripts/turn_data.gd")
 const TravelerArt = preload("res://traveler_art.gd")
 const TitleCard = preload("res://ui/title_card.gd")
 const ChapterSelect = preload("res://ui/chapter_select.gd")
+const ChapterPlayer = preload("res://ui/chapter_player.gd")
 const ROOM = "res://room.tscn"
 const BACKGROUNDS = [
 	preload("res://art/00_场景/02_镇口可玩空景.png"),
@@ -87,6 +88,8 @@ var checkpoint: ConfigFile
 var diary_hint := 0.0
 var title_card: CanvasLayer
 var chapter_select: CanvasLayer
+var chapter_player: CanvasLayer
+var story_done: bool = false
 
 func sound(channel: AudioStreamPlayer, clip: AudioStream, db: float, pitch := 1.0):
 	channel.stream = clip
@@ -116,12 +119,20 @@ func _ready():
 		clock_tick = 10
 	title_card = TitleCard.new()
 	add_child(title_card)
-	title_card.show_act("prologue", 1.5)
+	chapter_player = ChapterPlayer.new()
+	add_child(chapter_player)
+	chapter_player.play("prologue", _on_story_done)
 	chapter_select = ChapterSelect.new()
 	add_child(chapter_select)
 	reset_arrival_camera()
 
+func _on_story_done() -> void:
+	story_done = true
+	title_card.show_act("prologue", 1.2)
+
 func _physics_process(delta: float):
+	if not story_done:
+		return
 	if switching or opening_door or diary_open:
 		return
 	var motion := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
@@ -238,6 +249,8 @@ func near_exit() -> bool:
 	return offset.x <= [48, 82, 58][area] and offset.y <= 54
 
 func _unhandled_key_input(event: InputEvent):
+	if not story_done:
+		return
 	if not (event is InputEventKey and event.pressed and not event.echo) or switching:
 		return
 	if event.physical_keycode == KEY_R and area == 0:

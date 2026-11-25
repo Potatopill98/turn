@@ -4,6 +4,7 @@ const Progress = preload("res://chapter_progress.gd")
 const Data = preload("res://scripts/turn_data.gd")
 const EvidencePanel = preload("res://ui/evidence_panel.gd")
 const TitleCard = preload("res://ui/title_card.gd")
+const ChapterPlayer = preload("res://ui/chapter_player.gd")
 const ActWalk = preload("res://world/act_walk.gd")
 
 const DAY = preload("res://art/00_场景/09_游乐场与老街路灯_白天.png")
@@ -49,6 +50,10 @@ var deck_fixed := false
 var walk_layer: Node2D
 var title_card: CanvasLayer
 var evidence_layer: CanvasLayer
+var chapter_player: CanvasLayer
+var _story_played: Dictionary = {}
+var _a2_dream: bool = false
+var _a3_dream: bool = false
 var a2_stance: String = "none"
 var a3_stance: String = "none"
 var a2_done: bool = false
@@ -100,6 +105,8 @@ func _ready():
 	add_child(title_card)
 	evidence_layer = EvidencePanel.new()
 	add_child(evidence_layer)
+	chapter_player = ChapterPlayer.new()
+	add_child(chapter_player)
 	show_page(entry if entry in ["day","street","letter1","letter2","letter3","ending"] else "day")
 	if entry in ["day", "letter1", "letter2"]:
 		title_card.show_act("A2", 1.4)
@@ -109,6 +116,20 @@ func _ready():
 		title_card.show_act("ending", 1.4)
 
 func show_page(next: String, feedback := ""):
+	var story_id: String = ""
+	if next in ["letter1", "day"]:
+		story_id = "second"
+	elif next == "street":
+		story_id = "third"
+	elif next == "ending":
+		story_id = "epilogue"
+	if not story_id.is_empty() and not _story_played.has(story_id) and chapter_player != null:
+		_story_played[story_id] = true
+		chapter_player.play(story_id, _show_page_now.bind(next, feedback))
+		return
+	_show_page_now(next, feedback)
+
+func _show_page_now(next: String, feedback: String = ""):
 	var was := page
 	var focus_slot := buttons.get_children().find(get_viewport().gui_get_focus_owner())
 	page = next
@@ -283,6 +304,8 @@ func _process(delta: float):
 		prose.visible_characters = int(reveal)
 
 func _input(event: InputEvent):
+	if chapter_player != null and chapter_player.visible:
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_SPACE and prose.visible_ratio < 1:
 		prose.visible_characters = -1
 		get_viewport().set_input_as_handled()
@@ -333,6 +356,15 @@ func begin_street():
 func open_evidence_a2() -> void:
 	if evidence_layer == null:
 		return
+	if not _a2_dream:
+		_a2_dream = true
+		chapter_player.play("second_dream", _open_evidence_a2_now)
+		return
+	_open_evidence_a2_now()
+
+func _open_evidence_a2_now() -> void:
+	if evidence_layer == null:
+		return
 	evidence_layer.open("A2", _on_a2_result)
 
 func _on_a2_result(stance: String, _item_id: String) -> void:
@@ -342,6 +374,15 @@ func _on_a2_result(stance: String, _item_id: String) -> void:
 	show_page("zhou", "老周把记录本接过去，翻到三年前那一页，没合上。")
 
 func open_evidence_a3() -> void:
+	if evidence_layer == null:
+		return
+	if not _a3_dream:
+		_a3_dream = true
+		chapter_player.play("third_dream", _open_evidence_a3_now)
+		return
+	_open_evidence_a3_now()
+
+func _open_evidence_a3_now() -> void:
 	if evidence_layer == null:
 		return
 	evidence_layer.open("A3", _on_a3_result)

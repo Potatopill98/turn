@@ -4,6 +4,7 @@ extends Node
 # 运行：godot --headless --path E:\GodotProjects\turn --script res://tests/smoke_v3.gd
 
 const Data = preload("res://scripts/turn_data.gd")
+const Story = preload("res://scripts/story_data.gd")
 const EvidencePanel = preload("res://ui/evidence_panel.gd")
 const SAVE_PATH := "user://turn_chapters.cfg"
 
@@ -21,6 +22,7 @@ func _run() -> void:
 	_backup_save()
 	print("== turn v3 smoke ==")
 	_test_data()
+	_test_story()
 	_test_journal()
 	await _test_evidence()
 	await _test_room()
@@ -60,9 +62,31 @@ func _restore_save() -> void:
 	elif FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 
+func _test_story() -> void:
+	print("[story]")
+	var ids: Array = Story.act_ids()
+	check(ids.size() == 8, "story 8 段")
+	var total: int = 0
+	var tagged: int = 0
+	var choices: int = 0
+	for id in ids:
+		var beats: Array = Story.beats(str(id))
+		total += beats.size()
+		for b in beats:
+			var beat: Dictionary = b as Dictionary
+			if beat.has("item") or beat.has("person"):
+				tagged += 1
+			if beat.has("options"):
+				choices += 1
+	check(total >= 180, "story 总 beat >= 180")
+	check(choices == 4, "story 四个选择点")
+	check(tagged >= 15, "story 解锁标签 >= 15")
+	check(str(Story.title("first")).contains("第一幕"), "第一幕标题存在")
+	check(not Story.has("nope"), "未知段返回空")
+
 func _test_data() -> void:
 	print("[data]")
-	check(Data.person_entries().size() == 6, "6 张人物卡")
+	check(Data.person_entries().size() == 8, "8 张人物卡")
 	check(Data.item_entries().size() >= 20, "物证条目 >= 20")
 	for act in ["A1", "A2", "A3"]:
 		var items: Array = Data.evidence_items(act)
@@ -134,6 +158,9 @@ func _test_room() -> void:
 	var room: Node = room_scene.instantiate()
 	get_tree().root.add_child(room)
 	await get_tree().process_frame
+	if room.chapter_player != null:
+		room.chapter_player.skip()
+	await get_tree().process_frame
 	check(room.note_fixed == false, "便签初始未拼")
 	room.start_puzzle(false)
 	check(room.pieces.size() == 6, "报名表 6 片")
@@ -176,6 +203,9 @@ func _test_later() -> void:
 	var later: Node = later_scene.instantiate()
 	get_tree().root.add_child(later)
 	await get_tree().process_frame
+	if later.chapter_player != null:
+		later.chapter_player.skip()
+	await get_tree().process_frame
 	later.show_page("day")
 	check(later.walk_layer.active, "第二幕走位层激活")
 	later._walk_spot(0)
@@ -193,6 +223,8 @@ func _test_later() -> void:
 	check(later.heard_tape, "00:18 听到人声")
 	later.show_page("zhou")
 	later.open_evidence_a2()
+	if later.chapter_player != null and later.chapter_player.visible:
+		later.chapter_player.skip()
 	await get_tree().process_frame
 	later.evidence_layer._select_card(0)
 	later.evidence_layer._confirm()
@@ -201,6 +233,8 @@ func _test_later() -> void:
 	later.show_page("farewell")
 	TurnState.set_stance("A3", "expose")
 	later.open_evidence_a3()
+	if later.chapter_player != null and later.chapter_player.visible:
+		later.chapter_player.skip()
 	await get_tree().process_frame
 	later.evidence_layer._select_card(0)
 	later.evidence_layer._confirm()
@@ -208,6 +242,8 @@ func _test_later() -> void:
 	check(later.a3_done, "第三幕举证完成")
 	check(TurnState.ending_tier != "", "结局分档已结算")
 	later.show_page("ending")
+	if later.chapter_player != null and later.chapter_player.visible:
+		later.chapter_player.skip()
 	check(str(Data.ending(TurnState.ending_tier).get("title", "")) != "", "终章读到三档文案")
 	later.show_page("credits")
 	await get_tree().process_frame

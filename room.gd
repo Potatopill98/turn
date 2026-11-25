@@ -4,6 +4,7 @@ const Progress = preload("res://chapter_progress.gd")
 const Data = preload("res://scripts/turn_data.gd")
 const EvidencePanel = preload("res://ui/evidence_panel.gd")
 const TitleCard = preload("res://ui/title_card.gd")
+const ChapterPlayer = preload("res://ui/chapter_player.gd")
 
 const TravelerArt = preload("res://traveler_art.gd")
 const ROOM_ART = preload("res://art/00_场景/05_旧宅原型底图_960x600.png")
@@ -73,6 +74,8 @@ var pieces: Array[int] = []
 var showing_insert := false
 var panel := Control.new()
 var font := SystemFont.new()
+var chapter_player: CanvasLayer
+var _dream_seen: bool = false
 
 func _ready():
 	font.font_names = PackedStringArray(["Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC"])
@@ -95,6 +98,11 @@ func _ready():
 	add_child(title_card)
 	evidence_layer = EvidencePanel.new()
 	add_child(evidence_layer)
+	chapter_player = ChapterPlayer.new()
+	add_child(chapter_player)
+	chapter_player.play("first", _begin_act)
+
+func _begin_act() -> void:
 	title_card.show_act("A1", 1.5)
 	await title_card.finished
 	if not is_inside_tree():
@@ -643,6 +651,14 @@ func read_notice():
 	TurnState.unlock_item("e_notice")
 
 func open_evidence() -> void:
+	mode = "evidence"
+	if not _dream_seen:
+		_dream_seen = true
+		chapter_player.play("first_dream", _open_evidence_now)
+		return
+	_open_evidence_now()
+
+func _open_evidence_now() -> void:
 	mode = "evidence"
 	evidence_layer.open("A1", _on_evidence_result)
 
