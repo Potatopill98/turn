@@ -14,6 +14,11 @@ config/name="turn"
 run/main_scene="res://prologue.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
+[autoload]
+
+TurnState="*res://scripts/turn_state.gd"
+JournalUI="*res://ui/journal_panel.gd"
+
 [display]
 
 window/size/viewport_width=960

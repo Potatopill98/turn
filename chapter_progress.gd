@@ -16,6 +16,9 @@ static func mark(tree: SceneTree, chapter: String):
 	for key in ["prologue_diary", "shared_note", "spoke_to_zhou"]:
 		if tree.has_meta(key):
 			data.set_value("turn", key, tree.get_meta(key))
+	var state := tree.root.get_node_or_null("TurnState")
+	if state != null:
+		data.set_value("turn", "v3_state", state.snapshot())
 	var result := data.save(FILE)
 	if result != OK:
 		push_warning("章节进度保存失败：" + error_string(result))
@@ -29,6 +32,10 @@ static func restore(tree: SceneTree, data: ConfigFile) -> Error:
 			tree.set_meta(key, data.get_value("turn",key))
 		elif tree.has_meta(key):
 			tree.remove_meta(key)
+	var state := tree.root.get_node_or_null("TurnState")
+	if state != null:
+		var raw: String = str(data.get_value("turn", "v3_state", ""))
+		state.restore_snapshot(raw)
 	tree.set_meta("entry_chapter", chapter)
 	return tree.change_scene_to_file(SCENES[chapter])
 
@@ -36,5 +43,8 @@ static func fresh(tree: SceneTree):
 	for key in ["prologue_diary","shared_note","spoke_to_zhou","entry_chapter"]:
 		if tree.has_meta(key):
 			tree.remove_meta(key)
+	var state := tree.root.get_node_or_null("TurnState")
+	if state != null:
+		state.reset()
 	if FileAccess.file_exists(FILE):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(FILE))

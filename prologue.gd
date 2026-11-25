@@ -1,8 +1,10 @@
 extends Node2D
 
 const Progress = preload("res://chapter_progress.gd")
-
+const Data = preload("res://scripts/turn_data.gd")
 const TravelerArt = preload("res://traveler_art.gd")
+const TitleCard = preload("res://ui/title_card.gd")
+const ChapterSelect = preload("res://ui/chapter_select.gd")
 const ROOM = "res://room.tscn"
 const BACKGROUNDS = [
 	preload("res://art/00_场景/02_镇口可玩空景.png"),
@@ -83,6 +85,8 @@ var town_title_time := 3.4
 var hint_alpha := 1.0
 var checkpoint: ConfigFile
 var diary_hint := 0.0
+var title_card: CanvasLayer
+var chapter_select: CanvasLayer
 
 func sound(channel: AudioStreamPlayer, clip: AudioStream, db: float, pitch := 1.0):
 	channel.stream = clip
@@ -94,6 +98,10 @@ func _ready():
 	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC"])
 	handwriting.font_names = PackedStringArray(["KaiTi", "STKaiti", "Microsoft YaHei"])
 	checkpoint = Progress.read_save()
+	if checkpoint.has_section("turn"):
+		var snapshot: String = str(checkpoint.get_value("turn", "v3_state", ""))
+		if not snapshot.is_empty():
+			TurnState.restore_snapshot(snapshot)
 	for key in ["prologue_diary","shared_note","spoke_to_zhou","entry_chapter"]:
 		if get_tree().has_meta(key): get_tree().remove_meta(key)
 	for channel in [steps, props, clock_sound]:
@@ -101,6 +109,16 @@ func _ready():
 	world.z_index = -1
 	world.draw.connect(draw_world)
 	add_child(world)
+	TurnState.start_act("prologue")
+	diary_read = TurnState.has_flag("diary_read")
+	clock_reversed = TurnState.has_flag("clock_reversed")
+	if clock_reversed:
+		clock_tick = 10
+	title_card = TitleCard.new()
+	add_child(title_card)
+	title_card.show_act("prologue", 1.5)
+	chapter_select = ChapterSelect.new()
+	add_child(chapter_select)
 	reset_arrival_camera()
 
 func _physics_process(delta: float):
@@ -149,6 +167,8 @@ func move_on_ground(step: Vector2):
 				trail_angles.append(traveled.angle() + PI / 2)
 			if in_mud and trail_points.size() == 3:
 				footprints_started = true
+				TurnState.set_flag("footprints_started", true)
+				TurnState.unlock_item("e_footprints")
 				for i in 3:
 					var side := 3.0 if i % 2 == 0 else -3.0
 					trail_points[i] += Vector2.from_angle(trail_angles[i]) * side
@@ -169,6 +189,9 @@ func check_hallway():
 	elif distance_to_clock > 100.0 and clock_approached and not clock_reversed:
 		clock_reversed = true
 		clock_tick -= 1
+		TurnState.set_flag("clock_reversed", true)
+		TurnState.unlock_item("e_clock")
+		TurnState.push_backlog("墙钟", "你退开时，秒针往回跳了一格。")
 		sound(clock_sound, TICK, -25.0, 0.75)
 		clock_hold = 1.15
 		clock_accumulator = 0.0
@@ -217,14 +240,15 @@ func near_exit() -> bool:
 func _unhandled_key_input(event: InputEvent):
 	if not (event is InputEventKey and event.pressed and not event.echo) or switching:
 		return
-	if event.physical_keycode == KEY_R and area == 0 and checkpoint.has_section("turn"):
+	if event.physical_keycode == KEY_R and area == 0:
 		get_viewport().set_input_as_handled()
-		Progress.restore(get_tree(), checkpoint)
+		chapter_select.open(_on_chapter_picked)
 		return
 	if event.physical_keycode == KEY_SPACE and room_caption_time > 0.0 and not diary_open:
 		room_caption_time = minf(room_caption_time, 2.4)
-	elif event.physical_keycode == KEY_I and area == 2 and diary_read:
-		toggle_diary()
+	elif event.physical_keycode == KEY_I:
+		get_viewport().set_input_as_handled()
+		JournalUI.toggle()
 	elif event.physical_keycode in [KEY_E, KEY_ESCAPE] and diary_open:
 		toggle_diary()
 	elif event.physical_keycode == KEY_E and not opening_door:
@@ -232,6 +256,9 @@ func _unhandled_key_input(event: InputEvent):
 			shop_memory = 4.5
 		elif area == 2 and player.distance_to(BOOK_SPOT) <= 59.0:
 			diary_read = true
+			TurnState.set_flag("diary_read", true)
+			TurnState.unlock_item("e_diary")
+			TurnState.push_backlog("旧日记", DIARY_FIRST + DIARY_SECOND)
 			get_tree().set_meta("prologue_diary", DIARY_FIRST + DIARY_SECOND)
 			toggle_diary()
 		elif near_exit():
@@ -241,6 +268,16 @@ func _unhandled_key_input(event: InputEvent):
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+func _on_chapter_picked(id: String) -> void:
+	if id == "prologue":
+		get_tree().change_scene_to_file("res://prologue.tscn")
+	elif id == "room":
+		Progress.mark(get_tree(), "room")
+		get_tree().change_scene_to_file("res://room.tscn")
+	else:
+		get_tree().set_meta("entry_chapter", id)
+		get_tree().change_scene_to_file("res://later_chapters.tscn")
 
 func toggle_diary():
 	diary_open = not diary_open
@@ -358,7 +395,7 @@ func _draw():
 		draw_string(handwriting, Vector2.ZERO, DIARY_SECOND.trim_prefix("，"), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("#534137"))
 		draw_set_transform(Vector2.ZERO)
 		label(Vector2(22, 577), "旧日记 · 第一页", 20, PAPER)
-		label(Vector2(707, 577), "E / I / Esc 收起", 17, GOLD)
+		label(Vector2(707, 577), "E / Esc 收起", 17, GOLD)
 	else:
 		var task: String = ["沿石板巷往里走。", "沿石路走到绿木门前。", "屋里有人。去右侧房门看看。"][area]
 		if area == 0 and shop_memory > 0.0 and player.distance_to(SHOP) < 126.0:
@@ -375,11 +412,14 @@ func _draw():
 
 		var controls := "WASD / 方向键   E 互动   Shift 快走"
 		if diary_hint > 0.0:
-			controls = "I 回读日记   E 互动"
+			controls = "I 手记   E 互动"
 		var color := Color(GOLD, 1.0 if diary_hint > 0.0 else hint_alpha)
 		label(Vector2(647, 576), controls, 15, color)
-	if area == 0 and checkpoint.has_section("turn"):
-		label(Vector2(622, 594), "R  继续上次章节 · " + str(Progress.NAMES[checkpoint.get_value("turn","chapter")]), 15, GOLD)
+	if area == 0:
+		var resume_text: String = "R  章节列表"
+		if checkpoint.has_section("turn"):
+			resume_text = "R  章节 · " + str(Progress.NAMES[checkpoint.get_value("turn","chapter")])
+		label(Vector2(622, 594), resume_text, 15, GOLD)
 	if area == 0 and town_title_time > 0.0:
 		var opacity := minf(town_title_time, 1.0)
 		draw_rect(Rect2(26, 30, 158, 66), Color(INK, 0.82 * opacity))
