@@ -169,7 +169,7 @@ func _draw_npc(npc: Dictionary) -> void:
 		art_key = name
 	var path: String = _npc_texture_path(art_key)
 	var tex: Texture2D = texture(path)
-	var height: float = float(data.get("npc_height", 128.0))
+	var height: float = float(data.get("npc_height", player.height))
 	if tex != null:
 		var region: Rect2 = _npc_rects.get(art_key, Rect2(210, 70, 320, 900)) as Rect2
 		var width: float = height * region.size.x / region.size.y

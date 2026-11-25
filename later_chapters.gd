@@ -603,7 +603,7 @@ func _draw():
 			background = STREET
 			feature = PHONE
 			title = "唐棠的相册"
-			body = "「哦，原来约的两点。那天雨真大。」唐棠翻出这几年的照片。老吴一张也没认出来，只在她停下时点点头。"
+			body = "「哦，原来约的九点。那天雨真大。」唐棠翻出这几年的照片。老吴一张也没认出来，只在她停下时点点头。"
 		"farewell":
 			background = FAREWELL
 			title = "唐棠 · 搬家路口"

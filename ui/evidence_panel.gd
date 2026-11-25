@@ -246,7 +246,8 @@ func _show_reaction() -> void:
 	after_label.position = Vector2(152, 270)
 	_reaction_box.add_child(after_label)
 
-	var toast := SKIN.make_label(str(_pending.get("toast", "")), 13, SKIN.RED if _pending_is_decoy else SKIN.GREEN)
+	var toast_text: String = ("✗ " if _pending_is_decoy else "✓ ") + str(_pending.get("toast", ""))
+	var toast := SKIN.make_label(toast_text, 13, SKIN.RED if _pending_is_decoy else SKIN.GREEN)
 	toast.position = Vector2(152, 352)
 	_reaction_box.add_child(toast)
 

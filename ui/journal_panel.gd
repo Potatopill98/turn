@@ -31,6 +31,9 @@ var puzzle: RefCounted = null
 var _slots: Array[String] = ["", ""]
 var _combo_feedback: String = ""
 var _combo_ok: bool = false
+var _focus_index: int = 0
+var _sfx_chord: AudioStreamPlayer = null
+var _sfx_fail: AudioStreamPlayer = null
 
 func _ready() -> void:
 	layer = PANEL_LAYER
@@ -40,6 +43,14 @@ func _ready() -> void:
 	_sound.stream = preload("res://audio/prologue/page.wav")
 	_sound.volume_db = -16.0
 	add_child(_sound)
+	_sfx_chord = AudioStreamPlayer.new()
+	_sfx_chord.stream = preload("res://audio/trial_chord.wav")
+	_sfx_chord.volume_db = -14.0
+	add_child(_sfx_chord)
+	_sfx_fail = AudioStreamPlayer.new()
+	_sfx_fail.stream = preload("res://audio/prologue/tick.wav")
+	_sfx_fail.volume_db = -16.0
+	add_child(_sfx_fail)
 	_build()
 	visible = false
 	if TurnState.journal_changed.is_connected(_refresh):
@@ -138,24 +149,56 @@ func _build() -> void:
 	_tab_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_tab_box)
 
-	var hint := SKIN.make_label("I / Tab 收起    ·    点击卡片翻看    ·    底栏可切换 目标 / 提示 / 回看", 11, Color(0.33, 0.28, 0.21, 0.85))
+	var hint := SKIN.make_label("I / Esc 收起    ·    方向键 / Tab 选择    ·    Enter 确认    ·    点击卡片翻看", 11, Color(0.33, 0.28, 0.21, 0.85))
 	hint.position = Vector2(44, 574)
 	_root.add_child(hint)
+
+func _focusables() -> Array:
+	var out: Array = []
+	for child in _root.find_children("*", "Button", true, false):
+		out.append(child)
+	return out
+
+func _focus_cycle(step: int) -> void:
+	var buttons: Array = _focusables()
+	if buttons.is_empty():
+		return
+	_focus_index = wrapi(_focus_index + step, 0, buttons.size())
+	var btn: Button = buttons[_focus_index] as Button
+	btn.grab_focus()
+
+func _activate_focused() -> void:
+	var buttons: Array = _focusables()
+	if buttons.is_empty():
+		return
+	var btn: Button = buttons[_focus_index] as Button
+	btn.emit_signal("pressed")
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	var key_event: InputEventKey = event as InputEventKey
-	if key_event.physical_keycode in [KEY_I, KEY_TAB]:
-		if visible:
-			close()
-		else:
+	if not visible:
+		if key_event.physical_keycode == KEY_I:
 			open()
-		get_viewport().set_input_as_handled()
+			get_viewport().set_input_as_handled()
 		return
-	if visible and key_event.physical_keycode in [KEY_ESCAPE, KEY_E]:
-		close()
-		get_viewport().set_input_as_handled()
+	match key_event.physical_keycode:
+		KEY_I, KEY_ESCAPE:
+			close()
+			get_viewport().set_input_as_handled()
+		KEY_TAB:
+			_focus_cycle(1)
+			get_viewport().set_input_as_handled()
+		KEY_ENTER, KEY_KP_ENTER:
+			_activate_focused()
+			get_viewport().set_input_as_handled()
+		KEY_LEFT, KEY_UP:
+			_focus_cycle(-1)
+			get_viewport().set_input_as_handled()
+		KEY_RIGHT, KEY_DOWN:
+			_focus_cycle(1)
+			get_viewport().set_input_as_handled()
 
 func is_open() -> bool:
 	return visible
@@ -478,13 +521,27 @@ func _submit_combo() -> void:
 	var result: Dictionary = puzzle.combine_attempt(_slots[0], _slots[1])
 	if bool(result.get("ok", false)):
 		_combo_ok = true
-		_combo_feedback = "对上了：" + puzzle.clue_name(str(result.get("clue", "")))
+		_combo_feedback = "✓ 对上了：" + puzzle.clue_name(str(result.get("clue", "")))
 		_slots = ["", ""]
 		TurnState.note_progress()
+		if _sfx_chord.stream != null:
+			_sfx_chord.play()
 	else:
 		_combo_ok = false
-		_combo_feedback = str(result.get("reason", "这两件对不上。"))
+		_combo_feedback = "✗ " + str(result.get("reason", "这两件对不上。"))
+		if _sfx_fail.stream != null:
+			_sfx_fail.play()
+		_shake_feedback()
 	_refresh()
+
+func _shake_feedback() -> void:
+	if _root == null:
+		return
+	var tween: Tween = create_tween()
+	tween.tween_property(_root, "position:x", -6.0, 0.05)
+	tween.tween_property(_root, "position:x", 6.0, 0.05)
+	tween.tween_property(_root, "position:x", -3.0, 0.05)
+	tween.tween_property(_root, "position:x", 0.0, 0.05)
 
 func _select_puzzle(kind: String, id: String) -> void:
 	_selection = {"kind": kind, "id": id}

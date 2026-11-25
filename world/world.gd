@@ -12,6 +12,7 @@ const Journal = preload("res://ui/journal_panel.gd")
 const PuzzleState = preload("res://world/puzzle_state.gd")
 const AnimFx = preload("res://world/anim_fx.gd")
 const Data = preload("res://scripts/turn_data.gd")
+const EvidencePanel = preload("res://ui/evidence_panel.gd")
 
 const FONT_SIZE_HUD: int = 12
 const SPOT_RADIUS: float = 76.0
@@ -123,6 +124,8 @@ var _present_list: Control = null
 var _present_npc: Dictionary = {}
 var _present_wrong_count: Dictionary = {}
 var _refusal_count: Dictionary = {}
+var _evidence_panel: CanvasLayer = null
+var _sfx: Dictionary = {}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -158,9 +161,22 @@ func _ready() -> void:
 		start_id = "langcheng_room"
 	var start_spawn: String = str(TurnState.get_flag("explore_spawn", ""))
 	_enter(start_id, start_spawn, false)
+	# R128：继续上次回到退出时的实时坐标与朝向（可行走区内才恢复，否则落出生点）。
+	_restore_position()
 	# 坏档不静默：加载前已存在的存档读不回来时，开局给一次可见中文提示（R104）。
 	if FileAccess.file_exists(SAVE_FILE) and not _last_load_ok and _save_existed:
 		toast("存档读取出错，已从开头继续。")
+
+func _restore_position() -> void:
+	var saved_x: float = float(TurnState.get_flag("explore_x", -1.0))
+	var saved_y: float = float(TurnState.get_flag("explore_y", -1.0))
+	if saved_x < 0.0 or saved_y < 0.0:
+		return
+	var probe: PlayerState = PlayerState.new()
+	probe.height = player.height
+	if probe.can_stand(Vector2(saved_x, saved_y), data):
+		player.pos = Vector2(saved_x, saved_y)
+		player.dir = clampi(int(TurnState.get_flag("explore_dir", 1)), 0, 3)
 
 func _build_hud() -> void:
 	_hud = CanvasLayer.new()
@@ -209,40 +225,40 @@ func _build_hud() -> void:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(8)
 	_dialog_panel.add_theme_stylebox_override("panel", sb)
-	_dialog_panel.position = Vector2(96, 440)
-	_dialog_panel.size = Vector2(768, 108)
+	_dialog_panel.position = Vector2(96, 392)
+	_dialog_panel.size = Vector2(768, 96)
 	_dialog_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialog_panel.visible = false
 	_hud_root.add_child(_dialog_panel)
 
 	_dialog_speaker = SKIN.make_label("", 12, SKIN.GOLD)
-	_dialog_speaker.position = Vector2(116, 452)
+	_dialog_speaker.position = Vector2(116, 402)
 	_hud_root.add_child(_dialog_speaker)
 
 	_dialog_label = SKIN.make_label("", 16, SKIN.PAPER, 728.0)
-	_dialog_label.position = Vector2(116, 474)
-	_dialog_label.size = Vector2(728, 62)
+	_dialog_label.position = Vector2(116, 420)
+	_dialog_label.size = Vector2(728, 52)
 	_dialog_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hud_root.add_child(_dialog_label)
 
 	_dialog_hint = SKIN.make_label("E  继续", 12, Color(SKIN.GOLD, 1.0))
-	_dialog_hint.position = Vector2(786, 516)
+	_dialog_hint.position = Vector2(786, 452)
 	_dialog_hint.size = Vector2(76, 20)
 	_dialog_hint.modulate.a = 0.0
 	_hud_root.add_child(_dialog_hint)
 
 	_hint_band = ColorRect.new()
 	_hint_band.color = Color(0.06, 0.07, 0.08, 0.62)
-	_hint_band.position = Vector2(0, 560)
-	_hint_band.size = Vector2(960, 40)
+	_hint_band.position = Vector2(0, 500)
+	_hint_band.size = Vector2(960, 36)
 	_hint_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_hint_band)
-	_hint_label = SKIN.make_label("WASD / 方向键 走动　E 查看与交谈　I 手记　Esc 菜单", 12, Color(SKIN.PAPER, 0.82))
-	_hint_label.position = Vector2(24, 572)
+	_hint_label = SKIN.make_label("WASD / 方向键 走动　E 查看与交谈　I 手记　Esc 关闭", 12, Color(SKIN.PAPER, 0.82))
+	_hint_label.position = Vector2(24, 508)
 	_hud_root.add_child(_hint_label)
 
 	_target_label = SKIN.make_label("", 12, SKIN.GOLD, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
-	_target_label.position = Vector2(616, 572)
+	_target_label.position = Vector2(616, 508)
 	_hud_root.add_child(_target_label)
 
 	var journal_button: Button = SKIN.make_button("手记  I", 12, 92.0, 28.0)
@@ -333,8 +349,7 @@ func _enter(id: String, spawn_name: String = "", play_intro: bool = true) -> voi
 		head_tween.set_parallel(true)
 		head_tween.tween_property(_scene_title, "modulate:a", 1.0, 0.30)
 		head_tween.tween_property(_scene_sub, "modulate:a", 1.0, 0.45)
-	TurnState.set_flag("explore_x", at.x)
-	TurnState.set_flag("explore_y", at.y)
+	TurnState.set_flag("explore_spawn", spawn_name)
 	_save_progress()
 	if play_intro:
 		_play_intro()
@@ -619,7 +634,22 @@ func _set_hint_visible(value: bool) -> void:
 		_hint_label.visible = value
 
 func _present_layer_open() -> bool:
-	return _present_layer != null and _present_layer.visible
+	if _present_layer != null and _present_layer.visible:
+		return true
+	return _evidence_panel != null and _evidence_panel.visible
+
+func _open_evidence_panel(npc: Dictionary, act: String) -> void:
+	if _evidence_panel == null:
+		_evidence_panel = EvidencePanel.new()
+		add_child(_evidence_panel)
+	_evidence_panel.open(act, _on_evidence_result.bind(npc))
+
+func _on_evidence_result(stance: String, item_id: String, npc: Dictionary) -> void:
+	var person: String = str(npc.get("id", ""))
+	if not person.is_empty():
+		TurnState.set_flag("presented_" + person, true)
+		TurnState.unlock_person(person, true)
+	_save_position()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -642,6 +672,10 @@ func _say_npc(npc: Dictionary) -> void:
 			toast("认识了一个人 · " + who)
 
 	# 出示物证分支：尚未出示过，且手里有物证 → 进入选择层让玩家挑；空手走交谈台词。
+	var present_act: String = str(npc.get("present_act", ""))
+	if not present_act.is_empty() and not TurnState.has_flag("presented_" + person):
+		_open_evidence_panel(npc, present_act)
+		return
 	var present: Dictionary = npc.get("present", {}) as Dictionary
 	var present_ev: String = str(present.get("evidence", ""))
 	var present_flag: String = "presented_" + person
@@ -748,7 +782,8 @@ func _present_pick(ev: String) -> void:
 		if not grant.is_empty() and puzzle.add_evidence(grant):
 			granted_name = puzzle.evidence_name(grant)
 			_play_pickup(_present_npc.get("pos", Vector2.ZERO) as Vector2, granted_name)
-			_save_progress()
+			_save_position()
+		_play_sfx("present_ok", "res://audio/prologue/page.wav")
 		_close_present_layer()
 		say(str(present.get("reply", "……")), who)
 		if not granted_name.is_empty():
@@ -762,6 +797,7 @@ func _present_pick(ev: String) -> void:
 	_present_wrong_count[person] = used + 1
 	var line: String = str(lines[used % lines.size()]) if not lines.is_empty() else "他看看这件东西，摇了摇头，像是不认识。"
 	_close_present_layer()
+	_play_sfx("present_wrong", "res://audio/prologue/tick.wav")
 	say(line, who)
 
 func _use_spot(spot: Dictionary) -> void:
@@ -785,6 +821,7 @@ func _use_spot(spot: Dictionary) -> void:
 					TurnState.unlock_item(arg)
 					TurnState.note_progress()
 					_play_pickup(at, puzzle.evidence_name(ev))
+					_save_position()
 					say(label + "。我把它记进了手记。", "手记")
 					toast("手记 +1 · " + puzzle.evidence_name(ev))
 				else:
@@ -877,6 +914,7 @@ func _report_locked(state: Dictionary, context: String = "exit") -> void:
 		text += " 再想想还差什么，别硬闯。"
 	say(text, "旁白")
 	toast("锁住了 · 缺 " + "、".join(names))
+	_play_sfx("locked", "res://audio/prologue/tick.wav")
 
 # 组合一律走手记推理台：热点只给指向，不再自动判定（R076）。
 func _use_combo(spot: Dictionary) -> void:
@@ -895,6 +933,7 @@ func _play_pickup(at_world: Vector2, text: String) -> void:
 		return
 	_pickup_busy = true
 	_lock()
+	_play_sfx("pickup", "res://audio/prologue/latch.wav")
 	var screen: Vector2 = get_viewport().get_canvas_transform() * at_world
 	var done: Callable = func() -> void:
 		_pickup_busy = false
@@ -904,6 +943,7 @@ func _play_pickup(at_world: Vector2, text: String) -> void:
 func _enter_dream(target: String) -> void:
 	_return_scene = scene_id
 	_return_spawn = ""
+	_play_sfx("dream", "res://audio/prologue/hinge.wav")
 	if fx == null:
 		travel(target, "", "wipe")
 		return
@@ -926,6 +966,7 @@ func _wake() -> void:
 	var back: String = _return_scene if not _return_scene.is_empty() else "house_hall"
 	_return_scene = ""
 	toast("醒了 · 回到刚才的地方")
+	_play_sfx("wake", "res://audio/prologue/hinge.wav")
 	if fx == null:
 		travel(back, "", "wipe")
 		return
@@ -961,7 +1002,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_toggle_journal()
 		get_viewport().set_input_as_handled()
 	elif key_event.physical_keycode == KEY_ESCAPE:
-		if _present_layer_open():
+		if _dialog_open:
+			_advance_dialog()
+		elif _present_layer_open():
 			_close_present_layer()
 		elif JournalUI.is_open():
 			JournalUI.close()
@@ -982,6 +1025,20 @@ func current_scene_data() -> Dictionary:
 func scene_ids() -> Array:
 	return scenes.keys()
 
+func _play_sfx(key: String, path: String) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var player: AudioStreamPlayer
+	if _sfx.has(key):
+		player = _sfx[key] as AudioStreamPlayer
+	else:
+		player = AudioStreamPlayer.new()
+		player.volume_db = -16.0
+		add_child(player)
+		_sfx[key] = player
+	player.stream = load(path)
+	player.play()
+
 # ---- 进度落盘（R031）：TurnState 快照写入 user://，启动时读回；旧档缺键不报错。
 func _save_progress() -> void:
 	var file: ConfigFile = ConfigFile.new()
@@ -989,6 +1046,13 @@ func _save_progress() -> void:
 	var result: int = file.save(SAVE_FILE)
 	if result != OK:
 		push_warning("世界进度保存失败：" + error_string(result))
+
+# R128：把玩家实时坐标与朝向一并写入快照，继续上次时原地恢复。
+func _save_position() -> void:
+	TurnState.set_flag("explore_x", player.pos.x)
+	TurnState.set_flag("explore_y", player.pos.y)
+	TurnState.set_flag("explore_dir", player.dir)
+	_save_progress()
 
 func _load_progress() -> bool:
 	var file: ConfigFile = ConfigFile.new()

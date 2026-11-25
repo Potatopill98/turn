@@ -83,3 +83,9 @@ func _on_new_game() -> void:
 
 func _on_quit() -> void:
 	get_tree().quit()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key_event: InputEventKey = event as InputEventKey
+		if key_event.physical_keycode == KEY_ESCAPE:
+			get_tree().quit()

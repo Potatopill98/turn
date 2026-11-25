@@ -58,6 +58,7 @@ func _ready() -> void:
 	_ending_tier_checks()
 	await _title_checks()
 	_b6_delivery_checks()
+	_b7_delivery_checks()
 	_random_rounds()
 	_report()
 
@@ -1108,6 +1109,132 @@ func _b6_delivery_checks() -> void:
 			_fail("export_presets.cfg 解析失败")
 	else:
 		_fail("缺少 export_presets.cfg")
+
+func _b7_delivery_checks() -> void:
+	print("== B7 交付项断言（R126/R128/R130/R131/R134/R135/R136/R137/R138）==")
+	# R130 景别三级：街道 76 / 室内中景 84 / 院子近景 90，NPC 默认继承玩家身高。
+	var allowed: Array = [76.0, 84.0, 90.0]
+	var height_table: Array[String] = []
+	var height_ok: bool = true
+	for id in WorldData.all():
+		var scene: Dictionary = WorldData.all()[id] as Dictionary
+		var h: float = float(scene.get("player_height", 0.0))
+		height_table.append("%s=%.0f" % [str(id), h])
+		if not allowed.has(h):
+			height_ok = false
+			_fail("场景 %s 玩家身高 %.1f 不在景别表 76/84/90" % [str(id), h])
+	if height_ok:
+		_ok()
+		print("  景别身高全部落在 76/84/90：", " ".join(height_table), "  OK")
+
+	# R134 16:9 安全区：对话框 / 提示条 / 标签底部 y ≤ 540（设计视口 960×600，16:9 裁到 540）。
+	var panel_bottom: float = world._dialog_panel.position.y + world._dialog_panel.size.y
+	var band_bottom: float = world._hint_band.position.y + world._hint_band.size.y
+	if panel_bottom <= 540.0 and band_bottom <= 540.0 and world._dialog_label.position.y + world._dialog_label.size.y <= 540.0:
+		_ok()
+		print("  HUD 全部在 y≤540 安全区内（对话框底 %.0f，提示条底 %.0f）  OK" % [panel_bottom, band_bottom])
+	else:
+		_fail("HUD 越出 16:9 安全区：对话框底 %.0f，提示条底 %.0f" % [panel_bottom, band_bottom])
+
+	# R128 存档落点：中段坐标 + 朝向写盘，模拟读回后原地恢复。
+	world.force_scene("house_hall")
+	var probe: PlayerState = PlayerState.new()
+	probe.height = world.player.height
+	var target: Vector2 = Vector2(300.0, 470.0)
+	if probe.can_stand(target, world.current_scene_data()):
+		world.player.pos = target
+		world.player.dir = 3
+		world._save_position()
+		world.player.pos = Vector2(480.0, 480.0)
+		world.player.dir = 1
+		world._restore_position()
+		if world.player.pos.distance_to(target) < 1.0 and world.player.dir == 3:
+			_ok()
+			print("  存档落点恢复一致：%s dir=%d  OK" % [str(world.player.pos), world.player.dir])
+		else:
+			_fail("存档落点未恢复：pos=%s dir=%d（目标 %s dir=3）" % [str(world.player.pos), world.player.dir, str(target)])
+	else:
+		_fail("测试落点 %s 在 house_hall 不可站立" % str(target))
+
+	# R131 出示层接通：A1 / A3 各 4 张卡；对应 NPC 带 present_act；立场写入快照并可读回。
+	var a1: Array = Data.evidence_items("A1")
+	var a3: Array = Data.evidence_items("A3")
+	if a1.size() == 4 and a3.size() == 4:
+		_ok()
+		print("  A1 出示卡 %d 张、A3 出示卡 %d 张  OK" % [a1.size(), a3.size()])
+	else:
+		_fail("出示卡数量异常：A1=%d A3=%d" % [a1.size(), a3.size()])
+
+	var town_road: Dictionary = WorldData.all()["town_road"] as Dictionary
+	var street_cross: Dictionary = WorldData.all()["street_cross"] as Dictionary
+	var xiaoman: Dictionary = _npc_by_id(town_road.get("npcs", []) as Array, "p_xiaoman")
+	var tang: Dictionary = _npc_by_id(street_cross.get("npcs", []) as Array, "p_tang")
+	if str(xiaoman.get("present_act", "")) == "A1" and str(tang.get("present_act", "")) == "A3":
+		_ok()
+		print("  小满(A1) / 唐棠(A3) 出示接线到位  OK")
+	else:
+		_fail("NPC 出示接线缺失：小满 act=%s，唐棠 act=%s" % [str(xiaoman.get("present_act", "")), str(tang.get("present_act", ""))])
+
+	TurnState.set_stance("A1", "half")
+	var stance_snap: String = TurnState.snapshot()
+	TurnState.reset()
+	TurnState.restore_snapshot(stance_snap)
+	if TurnState.get_stance("A1") == "half":
+		_ok()
+		print("  出示立场写入快照并读回  OK")
+	else:
+		_fail("stance 未持久化：A1=%s" % TurnState.get_stance("A1"))
+
+	# R126 吴长庚档案：act=A3，修理店口径，世界层归位 street_cross。
+	var wu: Dictionary = Data.person("p_wu")
+	if str(wu.get("act", "")) == "A3" and str(wu.get("tag", "")).contains("修理店"):
+		_ok()
+		print("  吴长庚档案 A3 / 修理店口径  OK")
+	else:
+		_fail("吴长庚档案未对齐：act=%s tag=%s" % [str(wu.get("act", "")), str(wu.get("tag", ""))])
+	var wu_npc: Dictionary = _npc_by_id(street_cross.get("npcs", []) as Array, "p_wu")
+	if not wu_npc.is_empty():
+		_ok()
+		print("  吴长庚归位 street_cross  OK")
+	else:
+		_fail("street_cross 缺少吴长庚 NPC")
+
+	# R135/R136/R137/R138 文案一致性：只读原文比对，不改既有剧情文本。
+	var evidence_raw: String = FileAccess.get_file_as_string("res://data/evidence.json")
+	var story_raw: String = FileAccess.get_file_as_string("res://data/story.json")
+	var journal_raw: String = FileAccess.get_file_as_string("res://data/journal.json")
+	var text_checks: Array = [
+		[evidence_raw, "九点", "磁带时间已统一为九点"],
+		[evidence_raw, "老地方", "磁带地点已统一为老地方"],
+		[evidence_raw, "磁带机", "收音机已改磁带机"],
+		[evidence_raw, "一天一行", "记录本数字口径对齐"],
+		[story_raw, "你孩子吧", "辈分疑问已改对"],
+		[journal_raw, "修理店", "档案标签修理店口径"],
+	]
+	for check in text_checks:
+		if str(check[0]).contains(str(check[1])):
+			_ok()
+			print("  ", str(check[2]), "  OK")
+		else:
+			_fail("文案未命中：" + str(check[2]))
+	for bad in ["两点，桥下", "你儿子吧", "七个日期"]:
+		if evidence_raw.contains(bad) or story_raw.contains(bad) or journal_raw.contains(bad):
+			_fail("残留矛盾文案：" + bad)
+		else:
+			_ok()
+			print("  无残留「", bad, "」  OK")
+	if evidence_raw.contains("修到一半的收音机"):
+		_fail("物证标签仍是收音机")
+	else:
+		_ok()
+		print("  物证标签为磁带机，无收音机素材错位  OK")
+
+func _npc_by_id(npcs: Array, person_id: String) -> Dictionary:
+	for npc in npcs:
+		var entry: Dictionary = npc as Dictionary
+		if str(entry.get("id", "")) == person_id:
+			return entry
+	return {}
 
 func _report() -> void:
 	print("")
