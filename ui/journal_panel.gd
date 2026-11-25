@@ -5,6 +5,7 @@ extends CanvasLayer
 
 const SKIN = preload("res://ui/theme.gd")
 const Data = preload("res://scripts/turn_data.gd")
+const PuzzleState = preload("res://world/puzzle_state.gd")
 
 const PANEL_LAYER := 120
 const PEOPLE_PER_PAGE := 6
@@ -25,10 +26,12 @@ var _item_page: int = 0
 var _tab: String = "goal"
 var _was_paused: bool = false
 var _sound: AudioStreamPlayer
+var puzzle: RefCounted = null
 
 func _ready() -> void:
 	layer = PANEL_LAYER
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	puzzle = PuzzleState.new()
 	_sound = AudioStreamPlayer.new()
 	_sound.stream = preload("res://audio/prologue/page.wav")
 	_sound.volume_db = -16.0
@@ -161,6 +164,9 @@ func open() -> void:
 	visible = true
 	_selection = {"kind": "goal", "id": ""}
 	_tab = "goal"
+	if puzzle != null:
+		puzzle.reload()
+		puzzle.clear_fresh()
 	_refresh()
 	if _sound.stream != null:
 		_sound.play()
@@ -316,6 +322,55 @@ func _build_items() -> void:
 		else:
 			card.disabled = false
 			card.modulate = Color(1, 1, 1, 0.55)
+	_build_puzzle_sections()
+
+func _build_puzzle_sections() -> void:
+	if puzzle == null:
+		return
+	var fresh: Array[String] = puzzle.fresh_ids()
+	var ev_ids: Array[String] = puzzle.all_evidence()
+	var clue_ids: Array[String] = puzzle.all_clues()
+
+	var ev_title: Label = SKIN.make_label("现场物证（解谜）  %d" % ev_ids.size(), 13, SKIN.INK)
+	ev_title.position = Vector2(492, 318)
+	_items_box.add_child(ev_title)
+	var ev_index: int = 0
+	for eid in ev_ids:
+		var chip: Panel = _puzzle_chip(Vector2(492 + (ev_index % 3) * 142, 340 + (ev_index / 3) * 30), puzzle.evidence_name(eid), fresh.has(eid))
+		_items_box.add_child(chip)
+		ev_index += 1
+	if ev_ids.is_empty():
+		var empty_ev: Label = SKIN.make_label("还没有捡到现场物证。", 11, SKIN.INK_SOFT)
+		empty_ev.position = Vector2(492, 340)
+		_items_box.add_child(empty_ev)
+
+	var clue_title: Label = SKIN.make_label("组合推论  %d" % clue_ids.size(), 13, SKIN.INK)
+	clue_title.position = Vector2(492, 402)
+	_items_box.add_child(clue_title)
+	var clue_index: int = 0
+	for cid in clue_ids:
+		var chip2: Panel = _puzzle_chip(Vector2(492 + (clue_index % 3) * 142, 424), puzzle.clue_name(cid), fresh.has(cid))
+		_items_box.add_child(chip2)
+		clue_index += 1
+	if clue_ids.is_empty():
+		var empty_clue: Label = SKIN.make_label("把两件物证并排对上，才能推出一条推论。", 11, SKIN.INK_SOFT)
+		empty_clue.position = Vector2(492, 424)
+		_items_box.add_child(empty_clue)
+
+func _puzzle_chip(at: Vector2, text: String, is_fresh: bool) -> Panel:
+	var chip: Panel = Panel.new()
+	chip.position = at
+	chip.size = Vector2(136, 26)
+	var border: Color = SKIN.GOLD if is_fresh else Color(0.55, 0.45, 0.30, 0.35)
+	chip.add_theme_stylebox_override("panel", SKIN.style(Color(0.94, 0.89, 0.79, 0.92), border, 2 if is_fresh else 1, 4))
+	var label: Label = SKIN.make_label(text, 10, SKIN.INK, 120.0)
+	label.position = Vector2(8, 6)
+	chip.add_child(label)
+	if is_fresh:
+		var badge: Label = SKIN.make_label("新", 10, SKIN.GOLD, 16.0, HORIZONTAL_ALIGNMENT_CENTER)
+		badge.position = Vector2(116, 4)
+		chip.add_child(badge)
+	return chip
 
 func _build_tabs() -> void:
 	var tabs := [

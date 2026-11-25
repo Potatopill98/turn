@@ -7,6 +7,7 @@ extends Node
 
 const PlayerState = preload("res://world/player_state.gd")
 const WorldData = preload("res://world/world_data.gd")
+const PuzzleState = preload("res://world/puzzle_state.gd")
 const GRID: float = 16.0
 
 var world = null
@@ -38,6 +39,8 @@ func _ready() -> void:
 
 	_static_checks()
 	_reachability_checks()
+	_puzzle_checks()
+	await _lock_world_checks()
 	_random_rounds()
 	_report()
 
@@ -84,7 +87,7 @@ func _static_checks() -> void:
 		for spot in data.get("spots", []) as Array:
 			var s: Dictionary = spot as Dictionary
 			var kind: String = str(s.get("kind", ""))
-			if not (kind in ["talk", "item", "travel", "story", "dream", "wake"]):
+			if not (kind in ["talk", "item", "travel", "story", "dream", "wake", "combo"]):
 				_fail("%s 热点类型非法 %s" % [scene_id, kind])
 			if kind == "travel" and not scenes.has(str(s.get("arg", ""))):
 				_fail("%s 热点 travel 目标不存在 %s" % [scene_id, str(s.get("arg", ""))])
@@ -187,6 +190,152 @@ func _random_rounds() -> void:
 		print("  %d 步随机走位，0 次越界" % total_steps)
 	else:
 		print("  越界次数 %d / %d" % [bad_steps, total_steps])
+
+func _puzzle_checks() -> void:
+	print("== 物证 / 推论 / 条件锁 ==")
+	var puzzle: RefCounted = PuzzleState.new()
+
+	# 拾取成功 / 重复拾取返回 false
+	if puzzle.add_evidence("ev_note"):
+		_ok()
+		print("  物证拾取成功  OK")
+	else:
+		_fail("add_evidence 首次应返回 true")
+	if not puzzle.add_evidence("ev_note") and puzzle.has_evidence("ev_note"):
+		_ok()
+		print("  重复拾取返回 false  OK")
+	else:
+		_fail("重复拾取应返回 false 且 has_evidence 为 true")
+
+	# 缺一件时组合失败
+	if puzzle.try_combine("ev_note", "ev_photo") == "":
+		_ok()
+		print("  缺物证组合失败  OK")
+	else:
+		_fail("缺物证时 try_combine 应返回空串")
+
+	puzzle.add_evidence("ev_photo")
+	var clue: String = puzzle.try_combine("ev_note", "ev_photo")
+	if clue == "cl_score" and puzzle.has_clue("cl_score"):
+		_ok()
+		print("  组合成功得到推论 ", clue, "  OK")
+	else:
+		_fail("组合 ev_note+ev_photo 应得到 cl_score，实际：" + clue)
+	if puzzle.try_combine("ev_note", "ev_photo") == "":
+		_ok()
+		print("  重复组合返回空串  OK")
+	else:
+		_fail("推论已合成后再次组合应返回空串")
+	if puzzle.try_combine("ev_screw", "ev_tape") == "":
+		_ok()
+		print("  无关组合失败  OK")
+	else:
+		_fail("无关两件物证不应合成推论")
+
+	# 锁：满足 / 不满足
+	var open_lock: Dictionary = puzzle.lock_state({"evidence": ["ev_note"], "clues": [], "hint": "已满足"})
+	if bool(open_lock.get("ok", false)):
+		_ok()
+		print("  锁条件满足放行  OK")
+	else:
+		_fail("条件满足时 lock_state 应 ok=true")
+	var closed_lock: Dictionary = puzzle.lock_state({"evidence": ["ev_screw"], "clues": ["cl_lamp"], "hint": "先找螺丝"})
+	var missing: Array = closed_lock.get("missing", []) as Array
+	if not bool(closed_lock.get("ok", true)) and missing.has("ev_screw") and missing.has("cl_lamp") and not str(closed_lock.get("hint", "")).is_empty():
+		_ok()
+		print("  锁拒绝且给出缺口与提示  OK")
+	else:
+		_fail("锁拒绝时应列出缺失 id 且 hint 非空：" + str(closed_lock))
+
+	# 数据完整性：≥5 个条件锁；锁字段合法；组合配方合法
+	var scenes: Dictionary = WorldData.all()
+	var locked_count: int = 0
+	var evidence_reg: Dictionary = PuzzleState.EVIDENCE_NAMES
+	var clue_reg: Dictionary = PuzzleState.CLUE_NAMES
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		for exit in data.get("exits", []) as Array:
+			var e: Dictionary = exit as Dictionary
+			var lock: Dictionary = e.get("lock", {}) as Dictionary
+			if lock.is_empty():
+				continue
+			locked_count += 1
+			if str(lock.get("hint", "")).is_empty():
+				_fail("%s 锁出口缺 hint：%s" % [scene_id, str(e.get("label", ""))])
+			for eid in lock.get("evidence", []) as Array:
+				if not evidence_reg.has(str(eid)):
+					_fail("%s 锁引用未知物证 %s" % [scene_id, str(eid)])
+			for cid in lock.get("clues", []) as Array:
+				if not clue_reg.has(str(cid)):
+					_fail("%s 锁引用未知推论 %s" % [scene_id, str(cid)])
+		for spot in data.get("spots", []) as Array:
+			var s: Dictionary = spot as Dictionary
+			if str(s.get("kind", "")) == "combo":
+				var combo: Dictionary = s.get("combo", {}) as Dictionary
+				var a: String = str(combo.get("a", ""))
+				var b: String = str(combo.get("b", ""))
+				var c: String = str(combo.get("clue", ""))
+				if not evidence_reg.has(a) or not evidence_reg.has(b):
+					_fail("%s 组合热点引用未知物证 %s/%s" % [scene_id, a, b])
+				if not clue_reg.has(c):
+					_fail("%s 组合热点引用未知推论 %s" % [scene_id, c])
+				var pair: String = a + "|" + b if a <= b else b + "|" + a
+				if str(PuzzleState.COMBOS.get(pair, "")) != c:
+					_fail("%s 组合配方不匹配 COMBOS：%s" % [scene_id, pair])
+			var ev: String = str(s.get("gives_evidence", ""))
+			if not ev.is_empty() and not evidence_reg.has(ev):
+				_fail("%s 热点 gives_evidence 未知：%s" % [scene_id, ev])
+	if locked_count >= 5:
+		_ok()
+		print("  条件锁出口 %d 个（≥5）  OK" % locked_count)
+	else:
+		_fail("条件锁出口应 ≥5，实际 %d" % locked_count)
+	checks += 1
+
+func _lock_world_checks() -> void:
+	print("== 锁出口世界级检查 ==")
+	var scenes: Dictionary = WorldData.all()
+	var target_scene: String = ""
+	var target_exit: Dictionary = {}
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		for exit in data.get("exits", []) as Array:
+			var e: Dictionary = exit as Dictionary
+			var lock: Dictionary = e.get("lock", {}) as Dictionary
+			if not lock.is_empty() and lock.has("evidence"):
+				target_scene = scene_id
+				target_exit = e
+				break
+		if not target_scene.is_empty():
+			break
+	if target_scene.is_empty():
+		_fail("没有可测的物证锁出口")
+		return
+
+	world.force_scene(target_scene)
+	await get_tree().process_frame
+	world._use_exit(target_exit)
+	await get_tree().process_frame
+	if world.scene_id == target_scene and world._dialog_open:
+		_ok()
+		print("  锁拒绝：未进入且弹出缺口提示  OK")
+	else:
+		_fail("锁出口应拒绝进入并给出可读提示")
+
+	var lock: Dictionary = target_exit.get("lock", {}) as Dictionary
+	for eid in lock.get("evidence", []) as Array:
+		world.puzzle.add_evidence(str(eid))
+	world._dialog_open = false
+	world._use_exit(target_exit)
+	await get_tree().create_timer(0.90).timeout
+	if world.scene_id == str(target_exit.get("to", "")):
+		_ok()
+		print("  锁通过：条件满足后进入目标场景  OK")
+	else:
+		_fail("满足条件后应进入 " + str(target_exit.get("to", "")))
+	checks += 1
 
 func _report() -> void:
 	print("")

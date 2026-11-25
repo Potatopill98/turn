@@ -9,6 +9,8 @@ const SceneView = preload("res://world/scene_view.gd")
 const ChapterPlayer = preload("res://ui/chapter_player.gd")
 const SKIN = preload("res://ui/theme.gd")
 const Journal = preload("res://ui/journal_panel.gd")
+const PuzzleState = preload("res://world/puzzle_state.gd")
+const AnimFx = preload("res://world/anim_fx.gd")
 
 const FONT_SIZE_HUD: int = 12
 const SPOT_RADIUS: float = 76.0
@@ -79,6 +81,9 @@ var _nearest_exit: Dictionary = {}
 var _used: Dictionary = {}
 var _talked: Dictionary = {}
 var _talk_count: Dictionary = {}
+var puzzle: RefCounted = null
+var fx: CanvasLayer = null
+var _journal_button: Button = null
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -98,6 +103,10 @@ func _ready() -> void:
 
 	chapter = ChapterPlayer.new()
 	add_child(chapter)
+
+	puzzle = PuzzleState.new()
+	fx = AnimFx.new()
+	add_child(fx)
 
 	var start_id: String = str(TurnState.get_flag("explore_scene", "langcheng_room"))
 	if not scenes.has(start_id):
@@ -188,6 +197,7 @@ func _build_hud() -> void:
 	journal_button.position = Vector2(760, 14)
 	journal_button.pressed.connect(_toggle_journal)
 	_hud_root.add_child(journal_button)
+	_journal_button = journal_button
 
 	_toast_bg = ColorRect.new()
 	_toast_bg.color = Color(0.05, 0.06, 0.07, 0.0)
@@ -293,30 +303,32 @@ func _lock() -> void:
 func _unlock() -> void:
 	_locked = false
 
-func travel(to: String, spawn_name: String = "") -> void:
+func travel(to: String, spawn_name: String = "", anim: String = "wipe") -> void:
 	if _locked or to.is_empty() or not scenes.has(to):
 		return
 	_lock()
 	_close_dialog_now()
-	var t: Tween = create_tween()
-	t.tween_property(_title_card_bg, "color:a", 1.0, 0.16)
-	await t.finished
-	if bool(data.get("dream", false)) and not bool((scenes[to] as Dictionary).get("dream", false)):
-		_return_scene = ""
-	_enter(to, spawn_name, true)
-	_title_card_name.text = str(data.get("title", ""))
-	_title_card_sub.text = str(data.get("subtitle", ""))
-	_title_card_name.modulate.a = 1.0
-	_title_card_sub.modulate.a = 1.0
-	await get_tree().create_timer(0.40).timeout
-	var out: Tween = create_tween()
-	out.set_parallel(true)
-	out.tween_property(_title_card_bg, "color:a", 0.0, 0.30)
-	out.tween_property(_title_card_name, "modulate:a", 0.0, 0.24)
-	out.tween_property(_title_card_sub, "modulate:a", 0.0, 0.24)
-	await out.finished
-	if not chapter.visible:
-		_unlock()
+	if fx == null:
+		_enter(to, spawn_name, true)
+		if not chapter.visible:
+			_unlock()
+		return
+	if anim == "door":
+		var resume: Array = [false]
+		fx.play_door_open(func() -> void: resume[0] = true)
+		while not bool(resume[0]):
+			await get_tree().process_frame
+		if bool(data.get("dream", false)) and not bool((scenes[to] as Dictionary).get("dream", false)):
+			_return_scene = ""
+		_enter(to, spawn_name, true)
+		fx.door_reveal(func() -> void: _unlock())
+	else:
+		var mid: Callable = func() -> void:
+			if bool(data.get("dream", false)) and not bool((scenes[to] as Dictionary).get("dream", false)):
+				_return_scene = ""
+			_enter(to, spawn_name, true)
+		var done: Callable = func() -> void: _unlock()
+		fx.play_location_wipe(mid, done)
 
 func _close_dialog_now() -> void:
 	_dialog_open = false
@@ -534,9 +546,21 @@ func _use_spot(spot: Dictionary) -> void:
 	match kind:
 		"item":
 			TurnState.unlock_item(arg)
-			say(label + "。我把它记在手记里了。", "手记")
-			if first_time:
-				toast("手记 +1 · " + label)
+			var ev: String = str(spot.get("gives_evidence", ""))
+			if not ev.is_empty() and puzzle != null:
+				if puzzle.add_evidence(ev):
+					_play_pickup(at, puzzle.evidence_name(ev))
+					say(label + "。我把它记进了手记。", "手记")
+					if first_time:
+						toast("手记 +1 · " + puzzle.evidence_name(ev))
+				else:
+					say("这件东西刚才已经收进手记了。", "手记")
+			else:
+				say(label + "。我把它记在手记里了。", "手记")
+				if first_time:
+					toast("手记 +1 · " + label)
+		"combo":
+			_use_combo(spot)
 		"talk":
 			var text: String = arg
 			if not first_time and spot.has("arg2"):
@@ -556,13 +580,76 @@ func _use_exit(exit: Dictionary) -> void:
 	if bool(exit.get("wake", false)):
 		_wake()
 		return
-	travel(str(exit.get("to", "")), str(exit.get("spawn", "")))
+	var lock: Dictionary = exit.get("lock", {}) as Dictionary
+	if puzzle != null and not lock.is_empty():
+		var state: Dictionary = puzzle.lock_state(lock)
+		if not bool(state.get("ok", true)):
+			_report_locked(exit, state)
+			return
+	var anim: String = "door" if str(exit.get("spawn", "")) == "door" else "wipe"
+	travel(str(exit.get("to", "")), str(exit.get("spawn", "")), anim)
+
+func _report_locked(exit: Dictionary, state: Dictionary) -> void:
+	var missing: Array = state.get("missing", []) as Array
+	var names: PackedStringArray = PackedStringArray()
+	for mid in missing:
+		var m: String = str(mid)
+		if puzzle.has_clue(m):
+			names.append(puzzle.clue_name(m))
+		else:
+			names.append(puzzle.evidence_name(m))
+	var hint: String = str(state.get("hint", ""))
+	var text: String = "门锁着，进不去。还差：" + "、".join(names) + "。"
+	if not hint.is_empty():
+		text += " " + hint
+	say(text, "旁白")
+	toast("锁住了 · 缺 " + "、".join(names))
+
+func _use_combo(spot: Dictionary) -> void:
+	var combo: Dictionary = spot.get("combo", {}) as Dictionary
+	var a: String = str(combo.get("a", ""))
+	var b: String = str(combo.get("b", ""))
+	var clue: String = str(combo.get("clue", ""))
+	if puzzle == null:
+		return
+	if puzzle.has_clue(clue):
+		say("这条推论已经记在手记里了。", "推论")
+		return
+	var missing: PackedStringArray = PackedStringArray()
+	if not puzzle.has_evidence(a):
+		missing.append(puzzle.evidence_name(a))
+	if not puzzle.has_evidence(b):
+		missing.append(puzzle.evidence_name(b))
+	if not missing.is_empty():
+		say("还差两件物证才能对上：" + "、".join(missing) + "。先在这附近找找。", "旁白")
+		toast("组合失败 · 缺 " + "、".join(missing))
+		return
+	var got: String = puzzle.try_combine(a, b)
+	if got.is_empty():
+		say("这两件东西对在一起，暂时还看不出名堂。", "旁白")
+		return
+	_play_pickup(spot.get("pos", Vector2.ZERO) as Vector2, puzzle.clue_name(got))
+	say("推论出来了：" + puzzle.clue_name(got) + "。" + puzzle.clue_text(got), "推论")
+	toast("新推论 · " + puzzle.clue_name(got))
+
+func _play_pickup(at_world: Vector2, text: String) -> void:
+	if fx == null:
+		return
+	var screen: Vector2 = get_viewport().get_canvas_transform() * at_world
+	fx.play_pickup(screen, text, _journal_button, Callable())
 
 func _enter_dream(target: String) -> void:
 	_return_scene = scene_id
 	_return_spawn = ""
-	_flash(Color(0.96, 0.82, 0.54, 1.0))
-	travel(target, "")
+	if fx == null:
+		travel(target, "", "wipe")
+		return
+	var dream_mid: Callable = func() -> void: _enter(target, "", true)
+	var dream_done: Callable = func() -> void:
+		if not chapter.visible:
+			_unlock()
+	fx.play_dream_in(dream_mid, dream_done)
+	_lock()
 
 func _flash(color: Color) -> void:
 	if _fade_rect == null:

@@ -26,10 +26,10 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(360, 470), "label": "床", "kind": "talk", "arg": "床板硬得像桌面。我把外套垫在下面，躺下去，天花板就在眼前——七平米，连翻身都得先想好方向。"},
 			{"pos": Vector2(700, 430), "label": "窗外", "kind": "talk", "arg": "窗外是另一栋楼的墙。对面那扇窗也亮着，有人在里面走来走去，看不见脸。"},
-			{"pos": Vector2(620, 480), "label": "桌上的合同", "kind": "talk", "arg": "合同压在一只凉掉的饭盒底下。转正两个字，是这一整年最像样的东西。"},
+			{"pos": Vector2(620, 480), "label": "桌上的合同", "kind": "item", "arg": "e_letter", "gives_evidence": "ev_letter", "arg2": "合同压在一只凉掉的饭盒底下。转正两个字，是这一整年最像样的东西。残角上还记着一个地址。"},
 		],
 		"exits": [
-			{"pos": Vector2(560, 440), "to": "langcheng_office", "label": "出门 · 去公司", "spawn": "door"},
+			{"pos": Vector2(560, 440), "to": "langcheng_office", "label": "出门 · 去公司", "spawn": "door", "lock": {"evidence": ["ev_letter"], "hint": "先在桌上把那份合同残角收进手记，再出门。"}},
 			{"pos": Vector2(545, 545), "to": "town_gate", "label": "收行李 · 回镇上", "spawn": "bus"},
 		],
 	}
@@ -169,9 +169,10 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(480, 350), "label": "门", "kind": "travel", "arg": "house_hall"},
 			{"pos": Vector2(760, 400), "label": "门边的鞋", "kind": "talk", "arg": "门口摆着两双鞋。一双大的，一双小的，都摆得很正——像随时有人会回来穿。"},
+			{"pos": Vector2(420, 430), "label": "门槛缝", "kind": "item", "arg": "e_photo", "gives_evidence": "ev_photo", "arg2": "门槛缝里卡着一张旧照片，边角磨毛了。背面粘着一张复试通知的残片。"},
 		],
 		"exits": [
-			{"pos": Vector2(480, 340), "to": "house_hall", "label": "进门", "spawn": "door"},
+			{"pos": Vector2(480, 340), "to": "house_hall", "label": "进门", "spawn": "door", "lock": {"evidence": ["ev_photo"], "hint": "门虚掩着，先弯腰看看门槛缝里卡着什么。"}},
 			{"pos": Vector2(120, 500), "to": "town_road", "label": "回老街", "spawn": "house"},
 		],
 	}
@@ -194,11 +195,13 @@ static func all() -> Dictionary:
 			{"pos": Vector2(350, 300), "label": "墙上的老钟", "kind": "item", "arg": "e_clock"},
 			{"pos": Vector2(340, 340), "label": "布沙发", "kind": "talk", "arg": "坐垫塌下去一块，是固定坐着的那个人留下的形状。", "arg2": "坐下去，塌的那块正好托住腰。这个家还记得我的形状。"},
 			{"pos": Vector2(440, 350), "label": "茶几上的半杯水", "kind": "talk", "arg": "水是凉的，杯壁上没有水汽。妈妈大概出门有一会儿了。", "arg2": "杯子底下压着一张超市小票。日期是今天，买了两样东西：盐，和一束花。"},
+			{"pos": Vector2(510, 380), "label": "茶几夹层的便签", "kind": "item", "arg": "e_note", "gives_evidence": "ev_note", "arg2": "便签从茶几夹层露出来：「备用弦在夹层，到那边也能换。」字是父亲的。"},
+			{"pos": Vector2(300, 390), "label": "把两样东西并排看", "kind": "combo", "combo": {"a": "ev_note", "b": "ev_photo", "clue": "cl_score"}, "arg": "便签上的备用弦，和旧照片里那把琴是不是同一把？"},
 			{"pos": Vector2(750, 330), "label": "上锁的琴箱 · 把手放上去", "kind": "dream", "arg": "dream_classroom"},
 		],
 		"exits": [
 			{"pos": Vector2(860, 480), "to": "old_house_yard", "label": "出门", "spawn": "door"},
-			{"pos": Vector2(120, 320), "to": "basement", "label": "下地下室", "spawn": "stairs"},
+			{"pos": Vector2(120, 320), "to": "basement", "label": "下地下室", "spawn": "stairs", "lock": {"clues": ["cl_score"], "hint": "下楼前，先把厅里找到的便签和旧照片并排对上一一对。"}},
 		],
 	}
 	d["basement"] = {
@@ -239,7 +242,7 @@ static func all() -> Dictionary:
 		"props": [],
 		"npcs": [],
 		"spots": [
-			{"pos": Vector2(310, 460), "label": "秋千", "kind": "item", "arg": "e_screw"},
+			{"pos": Vector2(310, 460), "label": "秋千", "kind": "item", "arg": "e_screw", "gives_evidence": "ev_screw"},
 			{"pos": Vector2(700, 470), "label": "告示牌", "kind": "talk", "arg": "告示牌上写着：游乐场设施维修中，请勿靠近。落款是三年前。", "arg2": "告示牌背面有人用铅笔写了两个字。被雨泡糊了，只认得出一个「等」。"},
 			{"pos": Vector2(820, 500), "label": "纸壳堆", "kind": "talk", "arg": "纸壳被雨泡过又晒干，一层一层压在一起。最上面那只印着凤梨罐头的牌子。"},
 		],
@@ -266,11 +269,14 @@ static func all() -> Dictionary:
 		],
 		"spots": [
 			{"pos": Vector2(700, 470), "label": "路灯", "kind": "item", "arg": "e_lamp"},
-			{"pos": Vector2(300, 480), "label": "秋千 · 坐上去", "kind": "dream", "arg": "dream_swing" }, {"pos": Vector2(340, 505), "label": "秋千的链子", "kind": "talk", "arg": "链子上的锈一层一层。摸上去，指腹会留下橙红的粉。"},
-			{"pos": Vector2(350, 520), "label": "松掉的螺丝", "kind": "item", "arg": "e_screw"},
+			{"pos": Vector2(340, 505), "label": "秋千的链子", "kind": "talk", "arg": "链子上的锈一层一层。摸上去，指腹会留下橙红的粉。"},
+			{"pos": Vector2(350, 520), "label": "松掉的螺丝", "kind": "item", "arg": "e_screw", "gives_evidence": "ev_screw"},
+			{"pos": Vector2(560, 500), "label": "灯下的旧鞋", "kind": "item", "arg": "e_shoes", "gives_evidence": "ev_shoes", "arg2": "灯最亮的地方摆着一双小女孩的旧鞋，鞋底还是干净的。"},
+			{"pos": Vector2(620, 530), "label": "把螺丝和旧鞋并排看", "kind": "combo", "combo": {"a": "ev_screw", "b": "ev_shoes", "clue": "cl_lamp"}, "arg": "拧了三年的螺丝，和这双没穿走的鞋，能对上什么？"},
 		],
 		"exits": [
 			{"pos": Vector2(120, 560), "to": "playground_day", "label": "等到白天", "spawn": "day"},
+			{"pos": Vector2(300, 480), "to": "dream_swing", "label": "坐上秋千 · 入梦", "spawn": "", "lock": {"clues": ["cl_lamp"], "hint": "先想明白这架秋千和灯下那双鞋的关系，再坐上去。"}},
 		],
 	}
 
@@ -289,13 +295,15 @@ static func all() -> Dictionary:
 		"props": [],
 		"npcs": [],
 		"spots": [
-			{"pos": Vector2(430, 400), "label": "搬家清单", "kind": "item", "arg": "e_list", "arg2": "清单最后一项原本写着：把该带走的都带走。后来划掉了，改成：把该留的留下。"},
+			{"pos": Vector2(430, 400), "label": "搬家清单", "kind": "item", "arg": "e_list", "gives_evidence": "ev_list", "arg2": "清单最后一项原本写着：把该带走的都带走。后来划掉了，改成：把该留的留下。"},
 			{"pos": Vector2(330, 430), "label": "旧磁带 · 听一段", "kind": "dream", "arg": "dream_dirt_road"},
+			{"pos": Vector2(250, 470), "label": "磁带机旁的旧磁带", "kind": "item", "arg": "e_tape", "gives_evidence": "ev_tape", "arg2": "标签上写着阿棠。00:18 有一块人声，一直没寄出去。"},
 			{"pos": Vector2(620, 430), "label": "手机里的照片", "kind": "item", "arg": "e_phone"},
+			{"pos": Vector2(520, 480), "label": "把清单和磁带并排看", "kind": "combo", "combo": {"a": "ev_list", "b": "ev_tape", "clue": "cl_tape"}, "arg": "清单改了三回，磁带上的人话说到一半——这两件能对上什么？"},
 		],
 		"exits": [
 			{"pos": Vector2(120, 500), "to": "town_road", "label": "回老街", "spawn": "cross"},
-			{"pos": Vector2(820, 470), "to": "town_final", "label": "去镇口", "spawn": "road"},
+			{"pos": Vector2(820, 470), "to": "town_final", "label": "去镇口", "spawn": "road", "lock": {"clues": ["cl_lamp"], "hint": "想通路灯那件事之前，先别急着去终章灯火。"}},
 		],
 	}
 
