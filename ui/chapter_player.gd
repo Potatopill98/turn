@@ -183,7 +183,9 @@ func skip() -> void:
 func _process(delta: float) -> void:
 	if not _playing or not _typing:
 		return
-	_revealed += 32.0 * delta
+	var held: bool = Input.is_physical_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SPACE)
+	var speed: float = 32.0 * (1.2 if held else 1.0)
+	_revealed += speed * delta
 	var total: int = _text_label.text.length()
 	if int(_revealed) >= total:
 		_text_label.visible_characters = -1

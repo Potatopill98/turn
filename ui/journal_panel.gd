@@ -212,7 +212,7 @@ func _refresh() -> void:
 	_clear_box(_detail_box)
 	_clear_box(_tab_box)
 	_title_left.text = "人物  %d / %d" % [TurnState.people.size(), Data.person_entries().size()]
-	_title_right.text = "物证  %d / %d" % [TurnState.items.size(), Data.item_entries().size()]
+	_title_right.text = "旧物  %d / %d" % [TurnState.items.size(), Data.item_entries().size()]
 	_act_label.text = str(Data.act_title(TurnState.current_act).get("no", "")) + "  ·  " + str(Data.act_title(TurnState.current_act).get("name", ""))
 	_build_people()
 	_build_items()
@@ -382,22 +382,24 @@ func _build_puzzle_sections() -> void:
 func _puzzle_chip(at: Vector2, text: String, is_fresh: bool, usage: String, kind: String, id: String) -> Button:
 	var chip: Button = Button.new()
 	chip.position = at
-	var chip_height: int = 40 if not usage.is_empty() else 26
-	chip.size = Vector2(136, chip_height)
-	var border: Color = SKIN.GOLD if is_fresh else Color(0.55, 0.45, 0.30, 0.35)
-	chip.add_theme_stylebox_override("normal", SKIN.style(Color(0.94, 0.89, 0.79, 0.92), border, 2 if is_fresh else 1, 4))
-	chip.add_theme_stylebox_override("hover", SKIN.style(Color(0.96, 0.91, 0.81, 0.95), SKIN.GOLD_DIM, 1, 4))
-	chip.add_theme_stylebox_override("pressed", SKIN.style(SKIN.GOLD, SKIN.GOLD, 1, 4))
+	chip.size = Vector2(136, 26)
+	var border: Color = SKIN.INK if is_fresh else Color(0.55, 0.45, 0.30, 0.35)
+	chip.add_theme_stylebox_override("normal", SKIN.style(Color(0.94, 0.89, 0.79, 0.92), border, 2, 4))
+	chip.add_theme_stylebox_override("hover", SKIN.style(Color(0.96, 0.91, 0.81, 0.95), SKIN.GOLD_DIM, 2, 4))
+	chip.add_theme_stylebox_override("pressed", SKIN.style(SKIN.GOLD, SKIN.GOLD, 2, 4))
 	var selected: bool = str(_selection.get("kind", "")) == kind and str(_selection.get("id", "")) == id
 	if selected:
 		chip.add_theme_stylebox_override("normal", SKIN.style(SKIN.GOLD, SKIN.INK, 2, 4))
+	# 暖色投影：与场景层软阴影一致，避免纸卡浮在纸面。
+	var shadow: ColorRect = ColorRect.new()
+	shadow.color = Color(0.30, 0.22, 0.12, 0.25)
+	shadow.position = Vector2(3, 4)
+	shadow.size = Vector2(136, 26)
+	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chip.add_child(shadow)
 	var label: Label = SKIN.make_label(text, 10, SKIN.INK, 118.0)
 	label.position = Vector2(8, 4)
 	chip.add_child(label)
-	if not usage.is_empty():
-		var usage_label: Label = SKIN.make_label(usage, 8, SKIN.INK_SOFT, 120.0)
-		usage_label.position = Vector2(8, 20)
-		chip.add_child(usage_label)
 	if is_fresh:
 		var badge: Label = SKIN.make_label("新", 10, SKIN.GOLD, 16.0, HORIZONTAL_ALIGNMENT_CENTER)
 		badge.position = Vector2(116, 4)

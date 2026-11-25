@@ -37,7 +37,7 @@ func _ready() -> void:
 				continue
 			var sp: Dictionary = spots[rng.randi_range(0, spots.size() - 1)] as Dictionary
 			var kind: String = str(sp.get("kind", "talk"))
-			if kind == "talk" or kind == "item":
+			if kind == "talk" or kind == "item" or kind == "examine":
 				world.player.pos = sp.get("pos", Vector2(400, 400)) as Vector2
 				world._process(0.016)
 				world._use_spot(sp)

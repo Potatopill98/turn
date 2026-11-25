@@ -46,9 +46,12 @@ func _ready() -> void:
 	_lock_coverage_checks()
 	_puzzle_checks()
 	_wiring_checks()
+	_puzzle_coverage_checks()
+	_soft_lock_checks()
 	_persistence_checks()
 	await _lock_world_checks()
 	await _cross_scene_chain()
+	await _new_puzzle_chains()
 	_random_rounds()
 	_report()
 
@@ -95,7 +98,7 @@ func _static_checks() -> void:
 		for spot in data.get("spots", []) as Array:
 			var s: Dictionary = spot as Dictionary
 			var kind: String = str(s.get("kind", ""))
-			if not (kind in ["talk", "item", "travel", "story", "dream", "wake", "combo"]):
+			if not (kind in ["talk", "item", "travel", "story", "dream", "wake", "combo", "examine"]):
 				_fail("%s 热点类型非法 %s" % [scene_id, kind])
 			if kind == "travel" and not scenes.has(str(s.get("arg", ""))):
 				_fail("%s 热点 travel 目标不存在 %s" % [scene_id, str(s.get("arg", ""))])
@@ -510,6 +513,114 @@ func _wiring_checks() -> void:
 	else:
 		_fail("死胡同物证无出口：" + ", ".join(missing_outlet))
 
+func _puzzle_coverage_checks() -> void:
+	print("== 逐幕谜题覆盖（R051）==")
+	var scenes: Dictionary = WorldData.all()
+	var puzzle_scenes: Array[String] = []
+	var reason_scenes: Array[String] = []
+	var dream_puzzle: int = 0
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		var has_load: bool = false
+		for spot in data.get("spots", []) as Array:
+			var s: Dictionary = spot as Dictionary
+			if not str(s.get("gives_evidence", "")).is_empty():
+				has_load = true
+			if str(s.get("kind", "")) == "combo":
+				has_load = true
+			if str(s.get("kind", "")) == "examine" and not (s.get("lock", {}) as Dictionary).is_empty():
+				has_load = true
+		for npc in data.get("npcs", []) as Array:
+			var npc_d: Dictionary = npc as Dictionary
+			var present: Dictionary = npc_d.get("present", {}) as Dictionary
+			if not present.is_empty():
+				has_load = true
+			if not str(npc_d.get("needs_evidence", "")).is_empty():
+				has_load = true
+		var reason: String = str(data.get("no_puzzle_reason", ""))
+		if has_load:
+			puzzle_scenes.append(scene_id)
+			if bool(data.get("dream", false)):
+				dream_puzzle += 1
+		else:
+			reason_scenes.append(scene_id)
+			if reason.is_empty():
+				_fail("%s 零谜题场景未标 no_puzzle_reason" % scene_id)
+	if puzzle_scenes.size() >= 8:
+		_ok()
+		print("  有谜题负载场景 %d 个（≥8）  OK" % puzzle_scenes.size())
+	else:
+		_fail("有谜题负载场景应 ≥8，实际 %d" % puzzle_scenes.size())
+	if reason_scenes.size() <= 4:
+		_ok()
+		print("  纯叙事转场场景 %d 个（≤4）：%s  OK" % [reason_scenes.size(), ", ".join(reason_scenes)])
+	else:
+		_fail("纯叙事场景应 ≤4，实际 %d：%s" % [reason_scenes.size(), ", ".join(reason_scenes)])
+	if dream_puzzle >= 3:
+		_ok()
+		print("  有物证 / 组合的梦境 %d 个（≥3）  OK" % dream_puzzle)
+	else:
+		_fail("梦境有负载应 ≥3，实际 %d" % dream_puzzle)
+
+func _soft_lock_checks() -> void:
+	print("== 软锁断言：免条件出边可达性（R061）==")
+	var scenes: Dictionary = WorldData.all()
+	var free_adjacency: Dictionary = {}
+	var has_wake: Dictionary = {}
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		var free_edges: Array[String] = []
+		var wake: bool = false
+		for exit in data.get("exits", []) as Array:
+			var e: Dictionary = exit as Dictionary
+			if bool(e.get("wake", false)):
+				wake = true
+				continue
+			var to: String = str(e.get("to", ""))
+			if to.is_empty() or not scenes.has(to):
+				continue
+			var lock: Dictionary = e.get("lock", {}) as Dictionary
+			if lock.is_empty() or bool(e.get("open_edge", false)):
+				free_edges.append(to)
+		for spot in data.get("spots", []) as Array:
+			var s: Dictionary = spot as Dictionary
+			var kind: String = str(s.get("kind", ""))
+			if kind == "travel" or kind == "dream":
+				var target: String = str(s.get("arg", ""))
+				if scenes.has(target):
+					var lock: Dictionary = s.get("lock", {}) as Dictionary
+					if lock.is_empty() or bool(s.get("open_edge", false)):
+						free_edges.append(target)
+		free_adjacency[scene_id] = free_edges
+		has_wake[scene_id] = wake
+	var stuck: Array[String] = []
+	for id in scenes.keys():
+		var start: String = str(id)
+		var reached: Dictionary = {start: true}
+		var queue: Array[String] = [start]
+		var head: int = 0
+		while head < queue.size():
+			var cur: String = queue[head]
+			head += 1
+			for nxt in free_adjacency.get(cur, []) as Array:
+				var n: String = str(nxt)
+				if not reached.has(n):
+					reached[n] = true
+					queue.append(n)
+		var escape: bool = bool(has_wake.get(start, false))
+		for r in reached.keys():
+			if (free_adjacency.get(str(r), []) as Array).size() > 0:
+				escape = true
+		if not escape:
+			stuck.append(start)
+	if stuck.is_empty():
+		_ok()
+		print("  全部场景存在免条件出边或可醒回现实，无软锁  OK")
+	else:
+		_fail("软锁场景：%s（无免条件出边且邻居也不通）" % ", ".join(stuck))
+
 func _find_evidence_spot(ev: String) -> Dictionary:
 	for spot in world.current_scene_data().get("spots", []) as Array:
 		var s: Dictionary = spot as Dictionary
@@ -588,6 +699,85 @@ func _cross_scene_chain() -> void:
 		print("  回 C 场景开锁进入 D=basement  OK")
 	else:
 		_fail("合成 cl_score 后应能进入 basement，实际：" + world.scene_id)
+
+func _new_puzzle_chains() -> void:
+	print("== B4 新谜题链路（各 3 步断言）==")
+	# 链 A：room 取 ev_letter → office 取 ev_draft → 并排合成 cl_leave。
+	TurnState.reset()
+	world.puzzle.reload()
+	world.force_scene("langcheng_room")
+	await get_tree().process_frame
+	var letter_spot: Dictionary = _find_evidence_spot("ev_letter")
+	if letter_spot.is_empty():
+		_fail("链 A 找不到 ev_letter 热点")
+	else:
+		world._use_spot(letter_spot)
+		await get_tree().process_frame
+		if world.puzzle.has_evidence("ev_letter"):
+			_ok()
+			print("  A1 room 取得 ev_letter  OK")
+		else:
+			_fail("链 A 第一步：应取得 ev_letter")
+	world.force_scene("langcheng_office")
+	await get_tree().process_frame
+	var draft_spot: Dictionary = _find_evidence_spot("ev_draft")
+	if draft_spot.is_empty():
+		_fail("链 A 找不到 ev_draft 热点")
+	else:
+		world._use_spot(draft_spot)
+		await get_tree().process_frame
+		if world.puzzle.has_evidence("ev_draft"):
+			_ok()
+			print("  A2 office 取得 ev_draft  OK")
+		else:
+			_fail("链 A 第二步：应取得 ev_draft")
+	var leave_spot: Dictionary = _find_combo_spot("cl_leave")
+	if leave_spot.is_empty():
+		_fail("链 A 找不到 cl_leave 组合热点")
+	else:
+		world._use_combo(leave_spot)
+		await get_tree().create_timer(0.65).timeout
+		if world.puzzle.has_clue("cl_leave"):
+			_ok()
+			print("  A3 ev_letter+ev_draft 合成 cl_leave  OK")
+		else:
+			_fail("链 A 第三步：应合成 cl_leave")
+
+	# 链 B：postbox 取 ev_ticket → 携 ev_shoes → 土路并排合成 cl_return。
+	TurnState.reset()
+	world.puzzle.reload()
+	world.puzzle.add_evidence("ev_shoes")
+	world.force_scene("dream_postbox")
+	await get_tree().process_frame
+	var ticket_spot: Dictionary = _find_evidence_spot("ev_ticket")
+	if ticket_spot.is_empty():
+		_fail("链 B 找不到 ev_ticket 热点")
+	else:
+		world._use_spot(ticket_spot)
+		await get_tree().process_frame
+		if world.puzzle.has_evidence("ev_ticket"):
+			_ok()
+			print("  B1 postbox 取得 ev_ticket  OK")
+		else:
+			_fail("链 B 第一步：应取得 ev_ticket")
+	world.force_scene("dream_dirt_road")
+	await get_tree().process_frame
+	var return_spot: Dictionary = _find_combo_spot("cl_return")
+	if return_spot.is_empty():
+		_fail("链 B 找不到 cl_return 组合热点")
+	else:
+		world._use_combo(return_spot)
+		await get_tree().create_timer(0.65).timeout
+		if world.puzzle.has_clue("cl_return"):
+			_ok()
+			print("  B2 ev_ticket+ev_shoes 合成 cl_return  OK")
+		else:
+			_fail("链 B 第二步：应合成 cl_return")
+		if world.puzzle.has_evidence("ev_shoes"):
+			_ok()
+			print("  B3 携 ev_shoes 完成土路对照  OK")
+		else:
+			_fail("链 B 第三步：ev_shoes 应仍在手中")
 
 func _lock_world_checks() -> void:
 	print("== 锁出口世界级检查（拒绝 / 放行 / 状态与 fx 校验）==")

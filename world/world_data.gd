@@ -51,6 +51,8 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(420, 400), "label": "屏幕", "kind": "talk", "arg": "屏幕上是我改了十一版的方案。保存，关掉，再打开——其实一个字也没动。"},
 			{"pos": Vector2(660, 420), "label": "同事的椅子", "kind": "talk", "arg": "外套还搭在椅背上。人走了，杯子里的水还剩一半，杯壁已经不冒热气了。"},
+			{"pos": Vector2(560, 450), "label": "抽屉里的草稿", "kind": "item", "arg": "e_draft", "gives_evidence": "ev_draft", "arg2": "抽屉夹层压着一版草稿，页边记着镇上的老地址，和合同残角上的是同一个。"},
+			{"pos": Vector2(610, 380), "label": "把合同和草稿并排看", "kind": "combo", "combo": {"a": "ev_letter", "b": "ev_draft", "clue": "cl_leave"}, "arg": "合同残角上的地址，和草稿页边记的是同一个地方？"},
 		],
 		"exits": [
 			{"pos": Vector2(480, 520), "to": "langcheng_factory", "label": "下楼 · 去厂里", "spawn": "door"},
@@ -75,9 +77,11 @@ static func all() -> Dictionary:
 			{"pos": Vector2(620, 480), "label": "流水线", "kind": "talk", "arg": "一罐接一罐，从眼前过去，望不到头。每一罐都一模一样，连标签贴歪的角度都一样。"},
 			{"pos": Vector2(700, 380), "label": "挂着的工装", "kind": "talk", "arg": "蓝工装挂在钩上，袖口磨白了。名字牌是我自己贴的，写歪了，一直没换。"},
 			{"pos": Vector2(880, 520), "label": "水洼里的倒影", "kind": "talk", "arg": "灯在水里晃。人走过去，影子就散了。"},
+			{"pos": Vector2(700, 460), "label": "工装名牌", "kind": "examine", "lock": {"clues": ["cl_leave"]}, "arg": "名牌背面用铅笔补过一行：回镇上老宅看看。", "arg2": "和草稿上的地址对上了——从一开始这条路就指着家。"},
 		],
 		"exits": [
 			{"pos": Vector2(860, 545), "to": "town_final", "label": "请假 · 回镇上", "spawn": "bus", "lock": {"clues": ["cl_lamp"], "hint": "想通路灯那件事之前，先别急着去终章灯火。"}},
+			{"pos": Vector2(640, 545), "to": "langcheng_office", "label": "沿楼梯回工位", "spawn": "door", "open_edge": true, "open_reason": "从厂房返回已进过的工位，属于返程边，不受新条件门控"},
 		],
 	}
 
@@ -99,6 +103,7 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(255, 325), "label": "副食店的招牌", "kind": "item", "arg": "e_sign"},
 			{"pos": Vector2(600, 356), "label": "脚下的路", "kind": "talk", "arg": "柏油在太阳底下发软。走了两步，鞋底粘起一点黑。跟十年前一模一样。"},
+			{"pos": Vector2(360, 330), "label": "站牌上的旧地址", "kind": "examine", "lock": {"evidence": ["ev_letter"]}, "arg": "站牌背面的旧地名，和合同残角上记的对得上。", "arg2": "地址没错。这条街，就是回家的那条街。"},
 		],
 		"exits": [
 			{"pos": Vector2(480, 300), "to": "town_road", "label": "往里走 · 老街", "spawn": "gate"},
@@ -220,6 +225,7 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(780, 470), "label": "落了灰的琴箱", "kind": "item", "arg": "e_shell"},
 			{"pos": Vector2(920, 520), "label": "堆着的旧报纸", "kind": "talk", "arg": "报纸的日期停在很多年前。最上面一张，头版是省歌舞团的招生启事。"},
+			{"pos": Vector2(860, 460), "label": "琴箱背面的刻字", "kind": "examine", "lock": {"clues": ["cl_score"]}, "arg": "琴箱背面刻着两道弦距，和便签上记的备用弦对得上。", "arg2": "父亲收琴谱那天，也把她要走的路留着了。"},
 		],
 		"exits": [
 			{"pos": Vector2(440, 360), "to": "house_hall", "label": "上楼", "spawn": "door", "open_edge": true, "open_reason": "从地下室返回堂屋，此前已凭旧照片进入过"},
@@ -324,6 +330,7 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(300, 430), "label": "三口箱子", "kind": "talk", "arg": "三口箱子摆在地上：一口装衣服，一口装书，一口空着。空的那口，是留给还没决定的东西。", "arg2": "空箱子里积了一层灰。用手指划过去，能划出一条干净的线。"},
 			{"pos": Vector2(660, 430), "label": "停在四点十分的钟", "kind": "item", "arg": "e_watch"},
+			{"pos": Vector2(480, 430), "label": "空箱子里的灰", "kind": "examine", "lock": {"clues": ["cl_lamp"]}, "arg": "空箱子积了一层灰，留出来的位置正好搁一盏灯。", "arg2": "灯是等人回来的。空箱子也是——东西留下来，人就该回来了。"},
 		],
 		"exits": [
 			{"pos": Vector2(480, 520), "to": "house_hall", "label": "回家", "spawn": "door", "open_edge": true, "open_reason": "从终章返回堂屋，此前已凭旧照片进入过"},
@@ -350,6 +357,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(420, 380), "label": "讲台", "kind": "talk", "arg": "讲台上摊着一本卷了边的课本。粉笔灰落在上面，像一层薄雪。"},
 			{"pos": Vector2(560, 430), "label": "起哄的同学", "kind": "talk", "arg": "几个人围着最后一排笑。被围着的那个人低着头，肩膀在抖。"},
 			{"pos": Vector2(390, 470), "label": "歪掉的椅子", "kind": "talk", "arg": "椅子被撞得歪过去，桌上是几张揉皱的纸。"},
+			{"pos": Vector2(500, 440), "label": "课桌上的旧照片", "kind": "examine", "lock": {"evidence": ["ev_photo"]}, "arg": "课桌缝里夹着半张旧照片，和门槛缝里捡到的是同一张。", "arg2": "照片背面的通知残片，是她留下来的那一半。"},
 		],
 		"exits": [
 			{"pos": Vector2(560, 545), "to": "dream_alley", "label": "往前 · 巷子", "spawn": ""},
@@ -377,6 +385,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(150, 550), "to": "dream_postbox", "label": "往前 · 邮筒", "spawn": ""},
 		],
 		"dream": true,
+		"no_puzzle_reason": "梦境链过渡节点：承担第一幕记忆转场，线索对照集中在相邻的教室与邮筒节点。",
 	}
 
 	d["dream_postbox"] = {
@@ -396,6 +405,7 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(520, 490), "label": "邮筒", "kind": "talk", "arg": "绿色的邮筒，漆掉了一块。手里的纸被折出十字痕，又展开，又折上。"},
 			{"pos": Vector2(760, 520), "label": "地上的纸", "kind": "talk", "arg": "纸角被风掀起一点，又落回去。上面那行字，看了很多遍，还是不敢确认。"},
+			{"pos": Vector2(620, 500), "label": "邮筒边的票根", "kind": "item", "arg": "e_ticket", "gives_evidence": "ev_ticket", "arg2": "票根被折过两回，站台名磨花了，日期是她走的那天。"},
 		],
 		"exits": [
 			{"pos": Vector2(150, 555), "to": "dream_box", "label": "往前 · 木箱", "spawn": ""},
@@ -424,6 +434,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(150, 555), "to": "", "label": "醒过来", "spawn": "", "wake": true},
 		],
 		"dream": true,
+		"no_puzzle_reason": "梦境链收尾节点：第一幕记忆在此醒回现实，线索对照已在教室 / 邮筒节点完成，此处只承担情绪落点。",
 	}
 
 	d["dream_swing"] = {
@@ -443,6 +454,7 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(480, 470), "label": "荡到最高点", "kind": "talk", "arg": "小红鞋在黄昏里划出一道弧。两个小辫飞起来，笑声比人还高。"},
 			{"pos": Vector2(760, 500), "label": "秋千的链子", "kind": "item", "arg": "e_screw"},
+			{"pos": Vector2(620, 480), "label": "秋千绳结", "kind": "examine", "lock": {"evidence": ["ev_shoes"]}, "arg": "绳结上还系着一截鞋带，和旧鞋上的是同一根。", "arg2": "鞋留在灯下，秋千还在等她荡回来。"},
 		],
 		"exits": [
 			{"pos": Vector2(150, 555), "to": "", "label": "醒过来", "spawn": "", "wake": true},
@@ -467,6 +479,7 @@ static func all() -> Dictionary:
 		"spots": [
 			{"pos": Vector2(480, 490), "label": "两个人的影子", "kind": "talk", "arg": "夕阳把两个背书包的影子拉得很长。一个快，一个慢，走着走着就并到一起了。"},
 			{"pos": Vector2(760, 500), "label": "水渠", "kind": "talk", "arg": "水渠里有蛙声，一阵一阵。稻田的味道是热的。"},
+			{"pos": Vector2(620, 490), "label": "把票根和旧鞋并排看", "kind": "combo", "combo": {"a": "ev_ticket", "b": "ev_shoes", "clue": "cl_return"}, "arg": "站台票根，和灯下那双没穿走的旧鞋，能对上什么？"},
 		],
 		"exits": [
 			{"pos": Vector2(150, 555), "to": "dream_station", "label": "往前 · 车站", "spawn": ""},
@@ -496,6 +509,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(150, 555), "to": "", "label": "醒过来", "spawn": "", "wake": true},
 		],
 		"dream": true,
+		"no_puzzle_reason": "梦境链收尾节点：第三幕记忆在此醒回现实，票根与旧鞋的对照已在土路节点完成，此处只承担道别画面。",
 	}
 
 	return d

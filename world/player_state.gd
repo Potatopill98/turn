@@ -2,6 +2,7 @@ extends RefCounted
 
 # 探索模式的玩家逻辑（纯数据，不依赖节点，headless 可直接跑测试）。
 # 脚底锚点 = pos；碰撞用脚底小矩形，逐轴分离，避免贴墙抖动。
+# B4：8 向朝向、步幅 bob、短惯性收尾，供画面层读取 lift / foot_shift / walk_dir。
 
 const TravelerArt = preload("res://traveler_art.gd")
 
@@ -9,6 +10,7 @@ const SPEED: float = 152.0
 const FOOT_HALF_W: float = 11.0
 const FOOT_H: float = 9.0
 const STEP_LENGTH: float = 58.0
+const INERTIA_STOP: float = 8.0
 
 var pos: Vector2 = Vector2.ZERO
 var dir: int = 1
@@ -16,6 +18,8 @@ var walking: bool = false
 var step_phase: float = 0.0
 var step_meter: float = 0.0
 var height: float = 84.0
+var walk_dir: Vector2 = Vector2.ZERO
+var _glide: Vector2 = Vector2.ZERO
 
 func reset(at: Vector2, facing: int = 1) -> void:
 	pos = at
@@ -23,6 +27,8 @@ func reset(at: Vector2, facing: int = 1) -> void:
 	walking = false
 	step_phase = 0.0
 	step_meter = 0.0
+	walk_dir = Vector2.ZERO
+	_glide = Vector2.ZERO
 
 func foot_rect(at: Vector2) -> Rect2:
 	return Rect2(at.x - FOOT_HALF_W, at.y - FOOT_H, FOOT_HALF_W * 2.0, FOOT_H)
@@ -54,9 +60,11 @@ func can_stand(at: Vector2, data: Dictionary) -> bool:
 func step(delta: float, motion: Vector2, data: Dictionary) -> void:
 	var input: Vector2 = motion.limit_length()
 	dir = TravelerArt.facing(input, dir)
-	var desired: Vector2 = input * SPEED
-	walking = desired.length_squared() > 1.0
-	if walking:
+	if input.length_squared() > 1.0:
+		walk_dir = input
+		_glide = input * SPEED
+		walking = true
+		var desired: Vector2 = _glide
 		var move_x: float = desired.x * delta
 		var move_y: float = desired.y * delta
 		if absf(move_x) > 0.0001:
@@ -72,11 +80,44 @@ func step(delta: float, motion: Vector2, data: Dictionary) -> void:
 		if step_meter >= STEP_LENGTH:
 			step_meter = 0.0
 	else:
-		step_phase = 0.0
-		step_meter = 0.0
+		# 松手后的短滑步惯性：速度线性衰减到阈值内再切站立。
+		_glide = _glide * maxf(0.0, 1.0 - delta * 6.0)
+		if _glide.length() > INERTIA_STOP:
+			walking = true
+			var move_x: float = _glide.x * delta
+			var move_y: float = _glide.y * delta
+			if absf(move_x) > 0.0001:
+				var next_x: Vector2 = Vector2(pos.x + move_x, pos.y)
+				if can_stand(next_x, data):
+					pos = next_x
+			if absf(move_y) > 0.0001:
+				var next_y: Vector2 = Vector2(pos.x, pos.y + move_y)
+				if can_stand(next_y, data):
+					pos = next_y
+			step_phase += _glide.length() * delta / STEP_LENGTH
+		else:
+			walking = false
+			step_phase = 0.0
+			step_meter = 0.0
 
 func frame() -> int:
 	return int(floor(step_phase)) % 4
+
+# 垂直 bob：相位正弦 ±1.5px。
+func lift() -> float:
+	return sin(step_phase * TAU) * 1.5
+
+# 影子随左右脚相位小幅偏移。
+func foot_shift() -> float:
+	return sin(step_phase * TAU) * 4.0
+
+# 上身前倾角（弧度）：朝下走略前倾，朝上略后仰。
+func lean() -> float:
+	if walk_dir.y > 0.35:
+		return 0.06
+	if walk_dir.y < -0.35:
+		return -0.04
+	return 0.0
 
 # 走到某一点的直线自动寻路（测试与"自动走位检查"用）：
 # 逐轴靠近，卡住就换另一轴，最多 400 步。

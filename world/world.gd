@@ -86,6 +86,11 @@ var puzzle: RefCounted = null
 var fx: CanvasLayer = null
 var _journal_button: Button = null
 var _pickup_busy: bool = false
+var _target_label: Label = null
+var _bubble_w_cache: Dictionary = {}
+var _footstep: AudioStreamPlayer = null
+var _last_step_frame: int = -1
+var _cam_pos: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -109,6 +114,11 @@ func _ready() -> void:
 	puzzle = PuzzleState.new()
 	fx = AnimFx.new()
 	add_child(fx)
+
+	_footstep = AudioStreamPlayer.new()
+	_footstep.stream = load("res://audio/prologue/mud.wav")
+	_footstep.volume_db = -20.0
+	add_child(_footstep)
 
 	_load_progress()
 	var start_id: String = str(TurnState.get_flag("explore_scene", "langcheng_room"))
@@ -196,6 +206,10 @@ func _build_hud() -> void:
 	_hint_label.position = Vector2(24, 572)
 	_hud_root.add_child(_hint_label)
 
+	_target_label = SKIN.make_label("", 12, SKIN.GOLD, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_target_label.position = Vector2(616, 572)
+	_hud_root.add_child(_target_label)
+
 	var journal_button: Button = SKIN.make_button("手记  I", 12, 92.0, 28.0)
 	journal_button.position = Vector2(760, 14)
 	journal_button.pressed.connect(_toggle_journal)
@@ -204,15 +218,14 @@ func _build_hud() -> void:
 
 	_toast_bg = ColorRect.new()
 	_toast_bg.color = Color(0.05, 0.06, 0.07, 0.0)
-	_toast_bg.position = Vector2(660, 70)
-	_toast_bg.size = Vector2(280, 28)
+	_toast_bg.position = Vector2(620, 66)
+	_toast_bg.size = Vector2(320, 38)
 	_toast_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_toast_bg)
 
-	_toast = SKIN.make_label("", 13, SKIN.GOLD)
-	_toast.position = Vector2(674, 76)
-	_toast.size = Vector2(260, 20)
-	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast = SKIN.make_label("", 13, SKIN.GOLD, 296.0, HORIZONTAL_ALIGNMENT_CENTER)
+	_toast.position = Vector2(632, 72)
+	_toast.size = Vector2(296, 28)
 	_toast.modulate.a = 0.0
 	_hud_root.add_child(_toast)
 
@@ -349,15 +362,18 @@ func _process(delta: float) -> void:
 		var key_x: float = float(int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A)))
 		var key_y: float = float(int(Input.is_physical_key_pressed(KEY_S)) - int(Input.is_physical_key_pressed(KEY_W)))
 		motion += Vector2(key_x, key_y)
-		var move_scale: float = 0.55 if _dialog_open else 1.0
+		var move_scale: float = 0.75 if _dialog_open else 1.0
 		player.step(delta, motion.limit_length() * move_scale, data)
 		_update_nearby()
+		_update_footstep()
 	_update_camera(false)
 	_update_camera_text()
+	_update_target_label()
 
 	if _dialog_open:
 		if _type_progress < float(_type_full.length()):
-			_type_progress = minf(float(_type_full.length()), _type_progress + delta * 38.0)
+			var speed: float = 38.0 * (1.2 if _type_fast_held() else 1.0)
+			_type_progress = minf(float(_type_full.length()), _type_progress + delta * speed)
 			_dialog_label.visible_characters = int(_type_progress)
 		else:
 			_dialog_hint.modulate.a = 0.58 + 0.34 * sin(float(Time.get_ticks_msec()) * 0.006)
@@ -372,7 +388,7 @@ func toast(text: String) -> void:
 	_toast.text = text
 	_toast.modulate.a = 1.0
 	_toast_bg.color.a = 0.72
-	_toast_time = 1.7
+	_toast_time = 2.2
 
 func _set_zoom_scale(value: float) -> void:
 	_zoom_scale = value
@@ -395,7 +411,12 @@ func _update_camera(force: bool) -> void:
 		target.y = bounds.get_center().y
 	else:
 		target.y = clampf(target.y, bounds.position.y + half.y, bounds.end.y - half.y)
-	camera.position = target
+	if force:
+		_cam_pos = target
+	else:
+		var damp: float = clampf(6.0 * get_process_delta_time(), 0.0, 1.0)
+		_cam_pos = _cam_pos.lerp(target, damp)
+	camera.position = _cam_pos
 
 func _update_nearby() -> void:
 	_nearest_spot = {}
@@ -439,13 +460,58 @@ func _update_camera_text() -> void:
 		caption = "E  " + str(_nearest_exit.get("label", ""))
 	var screen: Vector2 = get_viewport().get_canvas_transform() * player.pos
 	_bubble.text = caption
-	var caption_width: float = SKIN.font().get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_HUD).x + 26.0
+	var cache_key: String = caption + "|" + str(FONT_SIZE_HUD)
+	var caption_width: float
+	if _bubble_w_cache.has(cache_key):
+		caption_width = float(_bubble_w_cache[cache_key])
+	else:
+		caption_width = SKIN.font().get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_HUD).x + 26.0
+		_bubble_w_cache[cache_key] = caption_width
 	_bubble.position = Vector2(screen.x - 130.0, screen.y - 136.0)
 	_bubble.size = Vector2(260, 24)
 	_bubble.visible = true
 	_bubble_bg.size = Vector2(caption_width, 24)
 	_bubble_bg.position = Vector2(screen.x - caption_width * 0.5, screen.y - 134.0)
 	_bubble_bg.visible = true
+
+# 按住 Shift / 空格：打字机 1.2 倍快进（R053）。
+func _type_fast_held() -> bool:
+	return Input.is_physical_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SPACE)
+
+# 上手引导：还没拿到第一件物证时，常显当前目标热点与 HUD 提示（R054）。
+func guidance_active() -> bool:
+	return puzzle != null and puzzle.all_evidence().is_empty()
+
+func current_target_spot() -> Dictionary:
+	if not guidance_active():
+		return {}
+	for spot in data.get("spots", []) as Array:
+		var s: Dictionary = spot as Dictionary
+		if str(s.get("kind", "")) == "item" and not str(s.get("gives_evidence", "")).is_empty():
+			return s
+	return {}
+
+func _update_target_label() -> void:
+	if _target_label == null:
+		return
+	var target: Dictionary = current_target_spot()
+	if target.is_empty():
+		_target_label.text = ""
+		return
+	_target_label.text = "目标：" + str(target.get("label", ""))
+
+func _update_footstep() -> void:
+	if _footstep == null or player == null:
+		return
+	if not player.walking:
+		_last_step_frame = -1
+		return
+	var frame: int = player.frame()
+	if frame == _last_step_frame:
+		return
+	_last_step_frame = frame
+	if _footstep.stream != null:
+		_footstep.play()
 
 func nearest_spot() -> Dictionary:
 	return _nearest_spot
@@ -470,6 +536,7 @@ func say(text: String, speaker: String = "旁白") -> void:
 	_dialog_label.visible_characters = 0
 	_dialog_speaker.text = speaker
 	_dialog_open = true
+	_dialog_hint.text = "E / 空格 继续"
 	_dialog_hint.modulate.a = 0.0
 	_dialog_panel.visible = true
 	_dialog_panel.modulate.a = 0.0
@@ -483,7 +550,8 @@ func _advance_dialog() -> void:
 	if _type_progress < float(_type_full.length()):
 		_type_progress = float(_type_full.length())
 		_dialog_label.visible_characters = -1
-		_dialog_hint.modulate.a = 0.0
+		_dialog_hint.text = "E / 空格 继续"
+		_dialog_hint.modulate.a = 0.58
 		return
 	_dialog_open = false
 	_dialog_hint.modulate.a = 0.0
@@ -599,6 +667,17 @@ func _use_spot(spot: Dictionary) -> void:
 					toast("手记 +1 · " + label)
 		"combo":
 			_use_combo(spot)
+		"examine":
+			var ex_lock: Dictionary = spot.get("lock", {}) as Dictionary
+			if puzzle != null and not ex_lock.is_empty():
+				var ex_state: Dictionary = puzzle.lock_state(ex_lock)
+				if not bool(ex_state.get("ok", true)):
+					_report_locked(ex_state)
+					return
+			var ex_text: String = arg
+			if not first_time and spot.has("arg2"):
+				ex_text = str(spot.get("arg2"))
+			say(ex_text, "旁白")
 		"talk":
 			var text: String = arg
 			if not first_time and spot.has("arg2"):

@@ -13,6 +13,15 @@ var world = null
 var font: SystemFont
 var _pulses: Array = []
 var _tex: Dictionary = {}
+var _w_cache: Dictionary = {}
+
+func _text_w(text: String, size: int) -> float:
+	var cache_key: String = text + "|" + str(size)
+	if _w_cache.has(cache_key):
+		return float(_w_cache[cache_key])
+	var measured: float = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	_w_cache[cache_key] = measured
+	return measured
 var _npc_rects: Dictionary = {
 	"陈守业": Rect2(215, 68, 313, 906),
 	"陈小满": Rect2(224, 45, 296, 928),
@@ -31,6 +40,7 @@ func setup(scene_data: Dictionary, player_state: RefCounted, owner_world: Node) 
 	player = player_state
 	world = owner_world
 	_tex.clear()
+	_w_cache.clear()
 	queue_redraw()
 
 func texture(path: String) -> Texture2D:
@@ -65,7 +75,7 @@ func _draw_pulses() -> void:
 		var k: float = clampf(age / 0.58, 0.0, 1.0)
 		var radius: float = 8.0 + 44.0 * k
 		var col: Color = item["color"] as Color
-		draw_arc((item["pos"] as Vector2) + Vector2(0, -10), radius, 0.0, TAU, 28, Color(col.r, col.g, col.b, (1.0 - k) * 0.5), 2.0)
+		draw_arc((item["pos"] as Vector2) + Vector2(0, -10), radius, 0.0, TAU, 16, Color(col.r, col.g, col.b, (1.0 - k) * 0.5), 2.0)
 
 func _draw() -> void:
 	if data.is_empty() or player == null:
@@ -171,7 +181,7 @@ func _draw_npc(npc: Dictionary) -> void:
 		draw_circle(Vector2(at.x, at.y - 112), 20.0, Color("#d8c3a4"))
 	var near: bool = world != null and world.has_method("is_near_npc") and bool(world.is_near_npc(npc))
 	if not near:
-		var width2: float = font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		var width2: float = _text_w(name, 12)
 		var top: float = at.y - height - 16.0
 		draw_rect(Rect2(at.x - width2 / 2.0 - 6.0, top, width2 + 12.0, 18.0), Color(SKIN.INK, 0.74))
 		draw_string(font, Vector2(at.x - width2 / 2.0, top + 14.0), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(SKIN.PAPER, 0.78))
@@ -192,21 +202,25 @@ func _npc_texture_path(key: String) -> String:
 
 func _draw_player() -> void:
 	var p = player
+	var shift: float = p.foot_shift()
 	draw_set_transform(p.pos, 0.0, Vector2(1.0, 0.42))
-	draw_circle(Vector2(0, 2), 11.0, Color(0.05, 0.05, 0.04, 0.34))
+	draw_circle(Vector2(shift, 2), 11.0, Color(0.05, 0.05, 0.04, 0.34))
 	draw_set_transform(Vector2.ZERO)
 	if p.walking:
 		var f: int = p.frame()
 		draw_circle(p.pos + Vector2(-7.0 if f % 2 == 0 else 7.0, -2), 3.0, Color(0.76, 0.71, 0.62, 0.10))
 		draw_circle(p.pos + Vector2(3.0 if f % 2 == 0 else -3.0, 0), 2.2, Color(0.76, 0.71, 0.62, 0.06))
-		TravelerArt.draw_walk(self, p.pos, p.dir, p.height, p.frame())
+		TravelerArt.draw_walk(self, p.pos, p.dir, p.height, f, p.lift(), p.lean())
 	else:
-		TravelerArt.draw(self, p.pos, p.dir, p.height)
+		TravelerArt.draw(self, p.pos, p.dir, p.height, 0.0, 0.0)
 
 func _draw_spots() -> void:
 	var nearest: Dictionary = {}
 	if world != null:
 		nearest = world.nearest_spot() as Dictionary
+	var target: Dictionary = {}
+	if world != null and world.has_method("current_target_spot"):
+		target = world.current_target_spot() as Dictionary
 	for spot in data.get("spots", []) as Array:
 		var s: Dictionary = spot as Dictionary
 		var at: Vector2 = s.get("pos", Vector2.ZERO) as Vector2
@@ -217,16 +231,23 @@ func _draw_spots() -> void:
 		var color: Color = SKIN.GOLD if is_near else Color(SKIN.GOLD, 0.38)
 		if used:
 			color = Color(0.62, 0.62, 0.58, 0.42)
+		var is_target: bool = not target.is_empty() and target.get("pos", Vector2.ZERO) == at
+		if is_target:
+			# 引导软光斑：未拿到首物证前，在目标热点脚下留一团暖色光晕。
+			draw_circle(at + Vector2(0, -6), 22.0, Color(SKIN.GOLD, 0.16))
+			draw_circle(at + Vector2(0, -6), 14.0, Color(SKIN.GOLD, 0.12))
 		var pulse_t: float = float(Time.get_ticks_msec()) * 0.0015
+		var near_unused: bool = is_near or (not used and player.pos.distance_to(at) < 140.0)
+		var breathe: float = 1.0 if near_unused else 0.0
 		var base_r: float = 6.0 if is_near else 4.0
-		var ring_r: float = base_r + (1.8 if is_near else 0.9) * sin(pulse_t * 1.6 + at.x * 0.05 + at.y * 0.03)
+		var ring_r: float = base_r + (1.8 if is_near else 0.9) * breathe * sin(pulse_t * 1.6 + at.x * 0.05 + at.y * 0.03)
 		if is_near:
-			draw_arc(at + Vector2(0, -10), 11.0 + 2.2 * sin(pulse_t * 2.0), 0.0, TAU, 20, Color(SKIN.GOLD, 0.32), 1.4)
+			draw_arc(at + Vector2(0, -10), 11.0 + 2.2 * breathe * sin(pulse_t * 2.0), 0.0, TAU, 16, Color(SKIN.GOLD, 0.32), 1.4)
 		draw_circle(at + Vector2(0, -10), ring_r, color)
 		draw_circle(at + Vector2(0, -10), 2.0, Color(SKIN.PAPER, 0.9))
-		if is_near or (player.pos.distance_to(at) < 140.0 and not used):
+		if near_unused:
 			var label: String = str(s.get("label", ""))
-			var w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+			var w: float = _text_w(label, 12)
 			draw_rect(Rect2(at.x - w / 2.0 - 6.0, at.y - 46.0, w + 12.0, 20.0), Color(SKIN.INK, 0.78))
 			draw_string(font, Vector2(at.x - w / 2.0, at.y - 31.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(SKIN.PAPER, 0.92))
 
@@ -237,12 +258,12 @@ func _draw_exits() -> void:
 		var near: bool = player.pos.distance_to(at) < 72.0
 		var color: Color = SKIN.GOLD if near else Color(SKIN.GOLD, 0.3)
 		var pulse_t: float = float(Time.get_ticks_msec()) * 0.0015
-		var ring: float = 14.0 + (2.0 * sin(pulse_t * 1.7) if near else 0.0)
-		draw_arc(at + Vector2(0, -8), ring, 0.0, TAU, 20, color, 2.0)
+		var ring: float = 14.0 + (2.0 * float(near) * sin(pulse_t * 1.7))
+		draw_arc(at + Vector2(0, -8), ring, 0.0, TAU, 16, color, 2.0)
 		draw_line(at + Vector2(-5, -8), at + Vector2(5, -8), color, 2.0)
 		if near:
 			var label: String = str(e.get("label", ""))
-			var w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+			var w: float = _text_w(label, 12)
 			draw_rect(Rect2(at.x - w / 2.0 - 7.0, at.y - 56.0, w + 14.0, 20.0), Color(SKIN.INK, 0.86))
 			draw_string(font, Vector2(at.x - w / 2.0, at.y - 41.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, SKIN.GOLD)
 
