@@ -52,18 +52,33 @@ var _bubble: Label = null
 var _bubble_bg: ColorRect = null
 var _scene_title: Label = null
 var _scene_sub: Label = null
-var _dialog_panel: ColorRect = null
+var _dialog_panel: Panel = null
 var _dialog_label: Label = null
-var _dialog_time: float = 0.0
+var _dialog_speaker: Label = null
+var _dialog_hint: Label = null
+var _dialog_open: bool = false
+var _type_full: String = ""
+var _type_progress: float = 0.0
 var _hint_band: ColorRect = null
+var _hint_label: Label = null
+var _toast: Label = null
+var _toast_bg: ColorRect = null
+var _toast_time: float = 0.0
 var _fade_layer: CanvasLayer = null
 var _fade_rect: ColorRect = null
+var _title_card: CanvasLayer = null
+var _title_card_bg: ColorRect = null
+var _title_card_name: Label = null
+var _title_card_sub: Label = null
+var _zoom_scale: float = 1.0
 var _return_scene: String = ""
 var _return_spawn: String = ""
 var _nearest_spot: Dictionary = {}
 var _nearest_npc: Dictionary = {}
 var _nearest_exit: Dictionary = {}
 var _used: Dictionary = {}
+var _talked: Dictionary = {}
+var _talk_count: Dictionary = {}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -130,17 +145,34 @@ func _build_hud() -> void:
 	_scene_sub.position = Vector2(26, 34)
 	_hud_root.add_child(_scene_sub)
 
-	_dialog_panel = ColorRect.new()
-	_dialog_panel.color = Color(SKIN.INK, 0.93)
-	_dialog_panel.position = Vector2(120, 452)
-	_dialog_panel.size = Vector2(720, 92)
+	_dialog_panel = Panel.new()
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.045, 0.050, 0.060, 0.95)
+	sb.border_color = Color(SKIN.GOLD, 0.40)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(8)
+	_dialog_panel.add_theme_stylebox_override("panel", sb)
+	_dialog_panel.position = Vector2(96, 440)
+	_dialog_panel.size = Vector2(768, 108)
+	_dialog_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dialog_panel.visible = false
 	_hud_root.add_child(_dialog_panel)
 
-	_dialog_label = SKIN.make_label("", 16, SKIN.PAPER, 696.0)
-	_dialog_label.position = Vector2(136, 466)
-	_dialog_label.size = Vector2(696, 68)
+	_dialog_speaker = SKIN.make_label("", 12, SKIN.GOLD)
+	_dialog_speaker.position = Vector2(116, 452)
+	_hud_root.add_child(_dialog_speaker)
+
+	_dialog_label = SKIN.make_label("", 16, SKIN.PAPER, 728.0)
+	_dialog_label.position = Vector2(116, 474)
+	_dialog_label.size = Vector2(728, 62)
+	_dialog_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hud_root.add_child(_dialog_label)
+
+	_dialog_hint = SKIN.make_label("E  继续", 12, Color(SKIN.GOLD, 1.0))
+	_dialog_hint.position = Vector2(786, 516)
+	_dialog_hint.size = Vector2(76, 20)
+	_dialog_hint.modulate.a = 0.0
+	_hud_root.add_child(_dialog_hint)
 
 	_hint_band = ColorRect.new()
 	_hint_band.color = Color(0.06, 0.07, 0.08, 0.62)
@@ -148,25 +180,64 @@ func _build_hud() -> void:
 	_hint_band.size = Vector2(960, 40)
 	_hint_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_hint_band)
-	var hint: Label = SKIN.make_label("WASD / 方向键 走动　E 查看与交谈　I 手记　Esc 菜单", 12, Color(SKIN.PAPER, 0.82))
-	hint.position = Vector2(24, 572)
-	_hud_root.add_child(hint)
+	_hint_label = SKIN.make_label("WASD / 方向键 走动　E 查看与交谈　I 手记　Esc 菜单", 12, Color(SKIN.PAPER, 0.82))
+	_hint_label.position = Vector2(24, 572)
+	_hud_root.add_child(_hint_label)
 
 	var journal_button: Button = SKIN.make_button("手记  I", 12, 92.0, 28.0)
 	journal_button.position = Vector2(760, 14)
 	journal_button.pressed.connect(_toggle_journal)
 	_hud_root.add_child(journal_button)
 
+	_toast_bg = ColorRect.new()
+	_toast_bg.color = Color(0.05, 0.06, 0.07, 0.0)
+	_toast_bg.position = Vector2(660, 70)
+	_toast_bg.size = Vector2(280, 28)
+	_toast_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_root.add_child(_toast_bg)
+
+	_toast = SKIN.make_label("", 13, SKIN.GOLD)
+	_toast.position = Vector2(674, 76)
+	_toast.size = Vector2(260, 20)
+	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast.modulate.a = 0.0
+	_hud_root.add_child(_toast)
+
 
 
 	_fade_layer = CanvasLayer.new()
-	_fade_layer.layer = 300
+	_fade_layer.layer = 320
 	add_child(_fade_layer)
 	_fade_rect = ColorRect.new()
 	_fade_rect.color = Color(0, 0, 0, 0)
 	_fade_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fade_layer.add_child(_fade_rect)
+
+	_build_title_card()
+
+
+func _build_title_card() -> void:
+	_title_card = CanvasLayer.new()
+	_title_card.layer = 310
+	add_child(_title_card)
+	_title_card_bg = ColorRect.new()
+	_title_card_bg.color = Color(0.03, 0.035, 0.040, 0.0)
+	_title_card_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_title_card_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_card.add_child(_title_card_bg)
+	_title_card_name = SKIN.make_label("", 26, SKIN.PAPER)
+	_title_card_name.position = Vector2(0, 258)
+	_title_card_name.size = Vector2(960, 40)
+	_title_card_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title_card_name.modulate.a = 0.0
+	_title_card.add_child(_title_card_name)
+	_title_card_sub = SKIN.make_label("", 12, SKIN.GOLD_DIM)
+	_title_card_sub.position = Vector2(0, 302)
+	_title_card_sub.size = Vector2(960, 24)
+	_title_card_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title_card_sub.modulate.a = 0.0
+	_title_card.add_child(_title_card_sub)
 
 func _enter(id: String, spawn_name: String = "", play_intro: bool = true) -> void:
 	if not scenes.has(id):
@@ -180,11 +251,24 @@ func _enter(id: String, spawn_name: String = "", play_intro: bool = true) -> voi
 	player.reset(at, 1)
 	player.height = float(data.get("player_height", 92.0))
 	view.setup(data, player, self)
+	_zoom_scale = 0.94
 	_update_camera(true)
+	var zoom_tween: Tween = create_tween()
+	zoom_tween.tween_method(_set_zoom_scale, 0.94, 1.0, 0.46).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	TurnState.set_flag("explore_scene", id)
 	if _scene_title != null:
 		_scene_title.text = str(data.get("title", ""))
 		_scene_sub.text = str(data.get("subtitle", ""))
+		if bool(data.get("dream", false)):
+			_scene_title.add_theme_color_override("font_color", Color("#f2cd93"))
+		else:
+			_scene_title.add_theme_color_override("font_color", Color(SKIN.PAPER))
+		_scene_title.modulate.a = 0.0
+		_scene_sub.modulate.a = 0.0
+		var head_tween: Tween = create_tween()
+		head_tween.set_parallel(true)
+		head_tween.tween_property(_scene_title, "modulate:a", 1.0, 0.30)
+		head_tween.tween_property(_scene_sub, "modulate:a", 1.0, 0.45)
 	TurnState.set_flag("explore_x", at.x)
 	TurnState.set_flag("explore_y", at.y)
 	if play_intro:
@@ -213,17 +297,33 @@ func travel(to: String, spawn_name: String = "") -> void:
 	if _locked or to.is_empty() or not scenes.has(to):
 		return
 	_lock()
-	var tween: Tween = create_tween()
-	tween.tween_property(_fade_rect, "color:a", 1.0, 0.18)
-	await tween.finished
+	_close_dialog_now()
+	var t: Tween = create_tween()
+	t.tween_property(_title_card_bg, "color:a", 1.0, 0.16)
+	await t.finished
 	if bool(data.get("dream", false)) and not bool((scenes[to] as Dictionary).get("dream", false)):
 		_return_scene = ""
 	_enter(to, spawn_name, true)
+	_title_card_name.text = str(data.get("title", ""))
+	_title_card_sub.text = str(data.get("subtitle", ""))
+	_title_card_name.modulate.a = 1.0
+	_title_card_sub.modulate.a = 1.0
+	await get_tree().create_timer(0.40).timeout
 	var out: Tween = create_tween()
-	out.tween_property(_fade_rect, "color:a", 0.0, 0.24)
+	out.set_parallel(true)
+	out.tween_property(_title_card_bg, "color:a", 0.0, 0.30)
+	out.tween_property(_title_card_name, "modulate:a", 0.0, 0.24)
+	out.tween_property(_title_card_sub, "modulate:a", 0.0, 0.24)
 	await out.finished
 	if not chapter.visible:
 		_unlock()
+
+func _close_dialog_now() -> void:
+	_dialog_open = false
+	_dialog_panel.visible = false
+	_dialog_panel.modulate.a = 0.0
+	_dialog_hint.modulate.a = 0.0
+	_set_hint_visible(true)
 
 func _process(delta: float) -> void:
 	if not _locked and not chapter.visible:
@@ -231,15 +331,33 @@ func _process(delta: float) -> void:
 		var key_x: float = float(int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A)))
 		var key_y: float = float(int(Input.is_physical_key_pressed(KEY_S)) - int(Input.is_physical_key_pressed(KEY_W)))
 		motion += Vector2(key_x, key_y)
-		player.step(delta, motion.limit_length(), data)
-		_update_camera(false)
+		var move_scale: float = 0.55 if _dialog_open else 1.0
+		player.step(delta, motion.limit_length() * move_scale, data)
 		_update_nearby()
+	_update_camera(false)
 	_update_camera_text()
 
-	if _dialog_time > 0.0:
-		_dialog_time = maxf(0.0, _dialog_time - delta)
-		if _dialog_time <= 0.0:
-			_dialog_panel.visible = false
+	if _dialog_open:
+		if _type_progress < float(_type_full.length()):
+			_type_progress = minf(float(_type_full.length()), _type_progress + delta * 38.0)
+			_dialog_label.visible_characters = int(_type_progress)
+		else:
+			_dialog_hint.modulate.a = 0.58 + 0.34 * sin(float(Time.get_ticks_msec()) * 0.006)
+
+	if _toast_time > 0.0:
+		_toast_time = maxf(0.0, _toast_time - delta)
+		var alpha: float = clampf(_toast_time / 0.45, 0.0, 1.0)
+		_toast.modulate.a = alpha
+		_toast_bg.color.a = 0.72 * alpha
+
+func toast(text: String) -> void:
+	_toast.text = text
+	_toast.modulate.a = 1.0
+	_toast_bg.color.a = 0.72
+	_toast_time = 1.7
+
+func _set_zoom_scale(value: float) -> void:
+	_zoom_scale = value
 
 func _update_camera(force: bool) -> void:
 	var bounds: Rect2 = data.get("bounds", Rect2(0, 0, 960, 600)) as Rect2
@@ -247,8 +365,9 @@ func _update_camera(force: bool) -> void:
 	var zoom: float = 1.0
 	if bounds.size.y < vp.y:
 		zoom = vp.y / bounds.size.y
-	camera.zoom = Vector2(zoom, zoom)
-	var half: Vector2 = vp * 0.5 / zoom
+	var base: float = zoom * _zoom_scale
+	camera.zoom = Vector2(base, base)
+	var half: Vector2 = vp * 0.5 / base
 	var target: Vector2 = player.pos
 	if bounds.size.x <= half.x * 2.0:
 		target.x = bounds.get_center().x
@@ -303,11 +422,11 @@ func _update_camera_text() -> void:
 	var screen: Vector2 = get_viewport().get_canvas_transform() * player.pos
 	_bubble.text = caption
 	var caption_width: float = SKIN.font().get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_HUD).x + 26.0
-	_bubble.position = Vector2(screen.x - 130.0, screen.y - 172.0)
+	_bubble.position = Vector2(screen.x - 130.0, screen.y - 136.0)
 	_bubble.size = Vector2(260, 24)
 	_bubble.visible = true
 	_bubble_bg.size = Vector2(caption_width, 24)
-	_bubble_bg.position = Vector2(screen.x - caption_width * 0.5, screen.y - 170.0)
+	_bubble_bg.position = Vector2(screen.x - caption_width * 0.5, screen.y - 134.0)
 	_bubble_bg.visible = true
 
 func nearest_spot() -> Dictionary:
@@ -326,12 +445,38 @@ func spot_used(spot: Dictionary) -> bool:
 func _spot_key(spot: Dictionary) -> String:
 	return scene_id + "_" + str(spot.get("label", "")) + "_" + str((spot.get("pos", Vector2.ZERO) as Vector2).x)
 
-func say(text: String) -> void:
+func say(text: String, speaker: String = "旁白") -> void:
+	_type_full = text
+	_type_progress = 0.0
 	_dialog_label.text = text
+	_dialog_label.visible_characters = 0
+	_dialog_speaker.text = speaker
+	_dialog_open = true
+	_dialog_hint.modulate.a = 0.0
 	_dialog_panel.visible = true
-	_dialog_time = clampf(2.4 + float(text.length()) * 0.09, 3.0, 9.0)
+	_dialog_panel.modulate.a = 0.0
+	_set_hint_visible(false)
+	var t: Tween = create_tween()
+	t.tween_property(_dialog_panel, "modulate:a", 1.0, 0.14)
+
+func _advance_dialog() -> void:
+	if not _dialog_open:
+		return
+	if _type_progress < float(_type_full.length()):
+		_type_progress = float(_type_full.length())
+		_dialog_label.visible_characters = -1
+		_dialog_hint.modulate.a = 0.0
+		return
+	_dialog_open = false
+	_dialog_hint.modulate.a = 0.0
+	_set_hint_visible(true)
+	var t: Tween = create_tween()
+	t.tween_property(_dialog_panel, "modulate:a", 0.0, 0.12)
 
 func _interact() -> void:
+	if _dialog_open:
+		_advance_dialog()
+		return
 	if _locked or chapter.visible:
 		return
 	if not _nearest_npc.is_empty():
@@ -343,32 +488,69 @@ func _interact() -> void:
 	if not _nearest_exit.is_empty():
 		_use_exit(_nearest_exit)
 
+func _set_hint_visible(value: bool) -> void:
+	if _hint_band != null:
+		_hint_band.visible = value
+	if _hint_label != null:
+		_hint_label.visible = value
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _dialog_open:
+			_advance_dialog()
+			get_viewport().set_input_as_handled()
+
 func _say_npc(npc: Dictionary) -> void:
 	var person: String = str(npc.get("id", ""))
+	var who: String = str(npc.get("name", "他"))
+	var key: String = "npc_" + person
+	var count: int = int(_talk_count.get(key, 0))
+	_talk_count[key] = count + 1
 	if not person.is_empty():
 		TurnState.unlock_person(person, true)
-	say(str(npc.get("line", "……")))
+		if count == 0:
+			toast("认识了一个人 · " + who)
+	var text: String = str(npc.get("line", "……"))
+	if count == 1 and npc.has("line2"):
+		text = str(npc.get("line2"))
+	elif count >= 2 and npc.has("line3"):
+		text = str(npc.get("line3"))
+	elif count > 0 and npc.has("line2"):
+		text = str(npc.get("line2"))
+	say(text, who)
 
 func _use_spot(spot: Dictionary) -> void:
 	var kind: String = str(spot.get("kind", "talk"))
 	var arg: String = str(spot.get("arg", ""))
 	var key: String = _spot_key(spot)
+	var at: Vector2 = spot.get("pos", Vector2.ZERO) as Vector2
+	var label: String = str(spot.get("label", "记下了"))
+	var first_time: bool = not bool(_used.get(key, false)) and not TurnState.has_flag("spot_" + key)
 	_used[key] = true
+	TurnState.set_flag("spot_" + key, true)
+	if view != null:
+		view.pulse(at, Color(0.98, 0.84, 0.48, 1.0))
 	match kind:
 		"item":
 			TurnState.unlock_item(arg)
-			var label: String = str(spot.get("label", "记下了"))
-			say("记下手记： " + label)
+			say(label + "。我把它记在手记里了。", "手记")
+			if first_time:
+				toast("手记 +1 · " + label)
 		"talk":
-			say(arg)
+			var text: String = arg
+			if not first_time and spot.has("arg2"):
+				text = str(spot.get("arg2"))
+			say(text, "旁白")
 		"travel":
 			travel(arg, "")
 		"wake":
 			_wake()
 		"dream":
+			toast("好像睡着了……")
 			_enter_dream(arg)
 		_:
-			say(arg)
+			say(arg, "旁白")
 
 func _use_exit(exit: Dictionary) -> void:
 	if bool(exit.get("wake", false)):
@@ -379,11 +561,21 @@ func _use_exit(exit: Dictionary) -> void:
 func _enter_dream(target: String) -> void:
 	_return_scene = scene_id
 	_return_spawn = ""
+	_flash(Color(0.96, 0.82, 0.54, 1.0))
 	travel(target, "")
+
+func _flash(color: Color) -> void:
+	if _fade_rect == null:
+		return
+	_fade_rect.color = Color(color.r, color.g, color.b, 0.0)
+	var t: Tween = create_tween()
+	t.tween_property(_fade_rect, "color:a", 0.55, 0.12)
+	t.tween_property(_fade_rect, "color:a", 0.0, 0.32)
 
 func _wake() -> void:
 	var back: String = _return_scene if not _return_scene.is_empty() else "house_hall"
 	_return_scene = ""
+	toast("醒了 · 回到刚才的地方")
 	travel(back, "")
 
 func _turn_dream_off() -> void:
@@ -391,6 +583,8 @@ func _turn_dream_off() -> void:
 
 func _toggle_journal() -> void:
 	if Journal == null:
+		return
+	if _locked or _dialog_open:
 		return
 	if JournalUI.is_open():
 		JournalUI.close()
@@ -412,9 +606,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			JournalUI.close()
 		get_viewport().set_input_as_handled()
 	elif key_event.physical_keycode == KEY_SPACE:
-		if _dialog_time > 0.0:
-			_dialog_time = 0.0
-			_dialog_panel.visible = false
+		if _dialog_open:
+			_advance_dialog()
 			get_viewport().set_input_as_handled()
 
 # 供测试使用：直接跳场景、直接拿当前场景数据

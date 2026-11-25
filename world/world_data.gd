@@ -134,12 +134,12 @@ static func all() -> Dictionary:
 		},
 		"props": [],
 		"npcs": [
-			{"name": "张成", "pos": Vector2(700, 630), "id": "p_zhang", "line": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。"},
-			{"name": "周德海", "pos": Vector2(340, 690), "id": "p_zhou", "line": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。"},
+			{"name": "张成", "pos": Vector2(700, 630), "id": "p_zhang", "line": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。", "line2": "你妈今早去镇口了。她说你要是回来，先去老宅看看，别急着找她。"},
+			{"name": "周德海", "pos": Vector2(340, 690), "id": "p_zhou", "line": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "line2": "你小时候天天在这条街上跑。那时候路灯坏一盏，整条街都黑，没人修。"},
 		],
 		"spots": [
 			{"pos": Vector2(360, 440), "label": "老宅的门", "kind": "travel", "arg": "old_house_yard"},
-			{"pos": Vector2(258, 628), "label": "副食店", "kind": "talk", "arg": "柜台后面空着。货架上的橘子汽水摆得很整齐，价签是手写的。"},
+			{"pos": Vector2(258, 628), "label": "副食店", "kind": "talk", "arg": "柜台后面空着。货架上的橘子汽水摆得很整齐，价签是手写的。", "arg2": "柜台后面的人抬头看了我一眼，又低下去。像在等我自己先开口。"},
 			{"pos": Vector2(880, 470), "label": "游乐场", "kind": "travel", "arg": "playground_day"},
 			{"pos": Vector2(660, 560), "label": "老街路灯", "kind": "item", "arg": "e_lamp"},
 			{"pos": Vector2(920, 690), "label": "池塘", "kind": "talk", "arg": "池塘边有一排石桥栏杆。水面很静，映着半边天。"},
@@ -192,8 +192,8 @@ static func all() -> Dictionary:
 		"npcs": [],
 		"spots": [
 			{"pos": Vector2(350, 300), "label": "墙上的老钟", "kind": "item", "arg": "e_clock"},
-			{"pos": Vector2(340, 340), "label": "布沙发", "kind": "talk", "arg": "坐垫塌下去一块，是固定坐着的那个人留下的形状。"},
-			{"pos": Vector2(440, 350), "label": "茶几上的半杯水", "kind": "talk", "arg": "水是凉的，杯壁上没有水汽。妈妈大概出门有一会儿了。"},
+			{"pos": Vector2(340, 340), "label": "布沙发", "kind": "talk", "arg": "坐垫塌下去一块，是固定坐着的那个人留下的形状。", "arg2": "坐下去，塌的那块正好托住腰。这个家还记得我的形状。"},
+			{"pos": Vector2(440, 350), "label": "茶几上的半杯水", "kind": "talk", "arg": "水是凉的，杯壁上没有水汽。妈妈大概出门有一会儿了。", "arg2": "杯子底下压着一张超市小票。日期是今天，买了两样东西：盐，和一束花。"},
 			{"pos": Vector2(750, 330), "label": "上锁的琴箱 · 把手放上去", "kind": "dream", "arg": "dream_classroom"},
 		],
 		"exits": [
@@ -240,7 +240,7 @@ static func all() -> Dictionary:
 		"npcs": [],
 		"spots": [
 			{"pos": Vector2(310, 460), "label": "秋千", "kind": "item", "arg": "e_screw"},
-			{"pos": Vector2(700, 470), "label": "告示牌", "kind": "talk", "arg": "告示牌上写着：游乐场设施维修中，请勿靠近。落款是三年前。"},
+			{"pos": Vector2(700, 470), "label": "告示牌", "kind": "talk", "arg": "告示牌上写着：游乐场设施维修中，请勿靠近。落款是三年前。", "arg2": "告示牌背面有人用铅笔写了两个字。被雨泡糊了，只认得出一个「等」。"},
 			{"pos": Vector2(820, 500), "label": "纸壳堆", "kind": "talk", "arg": "纸壳被雨泡过又晒干，一层一层压在一起。最上面那只印着凤梨罐头的牌子。"},
 		],
 		"exits": [
@@ -262,7 +262,7 @@ static func all() -> Dictionary:
 		"spawns": {"day": Vector2(300, 545)},
 		"props": [],
 		"npcs": [
-			{"name": "周德海", "pos": Vector2(520, 540), "id": "p_zhou", "line": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。"},
+			{"name": "周德海", "pos": Vector2(520, 540), "id": "p_zhou", "line": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "line2": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "line3": "你妈以前每晚都在这看着。她不说，我知道她在等谁。"},
 		],
 		"spots": [
 			{"pos": Vector2(700, 470), "label": "路灯", "kind": "item", "arg": "e_lamp"},
@@ -289,7 +289,7 @@ static func all() -> Dictionary:
 		"props": [],
 		"npcs": [],
 		"spots": [
-			{"pos": Vector2(430, 400), "label": "搬家清单", "kind": "item", "arg": "e_list"},
+			{"pos": Vector2(430, 400), "label": "搬家清单", "kind": "item", "arg": "e_list", "arg2": "清单最后一项原本写着：把该带走的都带走。后来划掉了，改成：把该留的留下。"},
 			{"pos": Vector2(330, 430), "label": "旧磁带 · 听一段", "kind": "dream", "arg": "dream_dirt_road"},
 			{"pos": Vector2(620, 430), "label": "手机里的照片", "kind": "item", "arg": "e_phone"},
 		],
@@ -314,7 +314,7 @@ static func all() -> Dictionary:
 		"props": [],
 		"npcs": [],
 		"spots": [
-			{"pos": Vector2(300, 430), "label": "三口箱子", "kind": "talk", "arg": "三口箱子摆在地上：一口装衣服，一口装书，一口空着。空的那口，是留给还没决定的东西。"},
+			{"pos": Vector2(300, 430), "label": "三口箱子", "kind": "talk", "arg": "三口箱子摆在地上：一口装衣服，一口装书，一口空着。空的那口，是留给还没决定的东西。", "arg2": "空箱子里积了一层灰。用手指划过去，能划出一条干净的线。"},
 			{"pos": Vector2(660, 430), "label": "停在四点十分的钟", "kind": "item", "arg": "e_watch"},
 		],
 		"exits": [
