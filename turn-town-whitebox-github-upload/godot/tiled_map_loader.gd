@@ -282,6 +282,7 @@ func _make_tileset(tilecount: int, with_collision: bool) -> TileSet:
 	var atlas_source := TileSetAtlasSource.new()
 	atlas_source.texture = tileset_texture
 	atlas_source.texture_region_size = _tile_size
+	_source_id = tile_set.add_source(atlas_source, _firstgid)
 
 	var half_w := float(_tile_size.x) * 0.5
 	var half_h := float(_tile_size.y) * 0.5
@@ -307,7 +308,6 @@ func _make_tileset(tilecount: int, with_collision: bool) -> TileSet:
 				tile_data.add_collision_polygon(0)
 				tile_data.set_collision_polygon_points(0, 0, diamond if _is_isometric else box)
 
-	_source_id = tile_set.add_source(atlas_source, _firstgid)
 	return tile_set
 
 func _make_layer_node(layer_name: String, tile_set: TileSet, order: int):
