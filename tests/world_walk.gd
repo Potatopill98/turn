@@ -25,6 +25,9 @@ func _ready() -> void:
 	if args.size() >= 2 and str(args[1]).is_valid_int():
 		rounds = int(args[1])
 	TurnState.reset()
+	var save_path: String = "user://turn_world.cfg"
+	if FileAccess.file_exists(save_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
 	var packed: PackedScene = load("res://world/world.tscn") as PackedScene
 	if packed == null:
 		_fail("world.tscn 加载失败")
@@ -40,8 +43,10 @@ func _ready() -> void:
 	_static_checks()
 	_reachability_checks()
 	_cross_scene_reachability()
+	_lock_coverage_checks()
 	_puzzle_checks()
 	_wiring_checks()
+	_persistence_checks()
 	await _lock_world_checks()
 	await _cross_scene_chain()
 	_random_rounds()
@@ -126,13 +131,15 @@ func _reachability_checks() -> void:
 	print("  可达性检查完成")
 
 func _cross_scene_reachability() -> void:
-	print("== 跨场景连通 BFS ==")
+	print("== 跨场景连通 BFS（带锁分级）==")
 	var scenes: Dictionary = WorldData.all()
 	var adjacency: Dictionary = {}
+	var open_adjacency: Dictionary = {}
 	for id in scenes.keys():
 		var scene_id: String = str(id)
 		var data: Dictionary = scenes[id] as Dictionary
 		var edges: Array[String] = []
+		var open_edges: Array[String] = []
 		for exit in data.get("exits", []) as Array:
 			var e: Dictionary = exit as Dictionary
 			if bool(e.get("wake", false)):
@@ -140,6 +147,9 @@ func _cross_scene_reachability() -> void:
 			var to: String = str(e.get("to", ""))
 			if not to.is_empty() and scenes.has(to):
 				edges.append(to)
+				var lock: Dictionary = e.get("lock", {}) as Dictionary
+				if lock.is_empty() or bool(e.get("open_edge", false)):
+					open_edges.append(to)
 		for spot in data.get("spots", []) as Array:
 			var s: Dictionary = spot as Dictionary
 			var kind: String = str(s.get("kind", ""))
@@ -147,7 +157,11 @@ func _cross_scene_reachability() -> void:
 				var target: String = str(s.get("arg", ""))
 				if scenes.has(target):
 					edges.append(target)
+					var lock: Dictionary = s.get("lock", {}) as Dictionary
+					if lock.is_empty() or bool(s.get("open_edge", false)):
+						open_edges.append(target)
 		adjacency[scene_id] = edges
+		open_adjacency[scene_id] = open_edges
 	var visited: Dictionary = {"langcheng_room": true}
 	var queue: Array[String] = ["langcheng_room"]
 	var head: int = 0
@@ -168,6 +182,95 @@ func _cross_scene_reachability() -> void:
 		print("  19 场景全部可达（跨场景 BFS）  OK")
 	else:
 		_fail("孤儿场景无入边：" + ", ".join(orphans))
+	# 自由 BFS：锁边不算通走，只统计被条件门控的场景，不白嫖锁边。
+	var open_visited: Dictionary = {"langcheng_room": true}
+	var open_queue: Array[String] = ["langcheng_room"]
+	var open_head: int = 0
+	while open_head < open_queue.size():
+		var cur_open: String = open_queue[open_head]
+		open_head += 1
+		for nxt in open_adjacency.get(cur_open, []) as Array:
+			var n_open: String = str(nxt)
+			if not open_visited.has(n_open):
+				open_visited[n_open] = true
+				open_queue.append(n_open)
+	var gated: Array[String] = []
+	for id in visited.keys():
+		if not open_visited.has(str(id)):
+			gated.append(str(id))
+	print("  条件门控场景（仅锁边可达）：" + ", ".join(gated))
+
+func _lock_coverage_checks() -> void:
+	print("== 锁目标入边覆盖断言 ==")
+	var scenes: Dictionary = WorldData.all()
+	var inbound: Dictionary = {}
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		for exit in data.get("exits", []) as Array:
+			var e: Dictionary = exit as Dictionary
+			if bool(e.get("wake", false)):
+				continue
+			var to: String = str(e.get("to", ""))
+			if not to.is_empty() and scenes.has(to):
+				var entry: Dictionary = {
+					"source": scene_id,
+					"kind": "exit",
+					"lock": e.get("lock", {}) as Dictionary,
+					"open_edge": bool(e.get("open_edge", false)),
+					"reason": str(e.get("open_reason", "")),
+				}
+				_inbound_add(inbound, to, entry)
+		for spot in data.get("spots", []) as Array:
+			var s: Dictionary = spot as Dictionary
+			var kind: String = str(s.get("kind", ""))
+			if kind == "travel" or kind == "dream":
+				var target: String = str(s.get("arg", ""))
+				if scenes.has(target):
+					var entry: Dictionary = {
+						"source": scene_id,
+						"kind": "spot:" + kind,
+						"lock": s.get("lock", {}) as Dictionary,
+						"open_edge": bool(s.get("open_edge", false)),
+						"reason": str(s.get("open_reason", "")),
+					}
+					_inbound_add(inbound, target, entry)
+	var locked_targets: Dictionary = {}
+	for target in inbound.keys():
+		for edge in inbound[target] as Array:
+			var lock: Dictionary = edge.get("lock", {}) as Dictionary
+			if not lock.is_empty():
+				locked_targets[str(target)] = lock
+	for target in locked_targets.keys():
+		var canon: Dictionary = locked_targets[target] as Dictionary
+		for edge in inbound[target] as Array:
+			if bool(edge.get("open_edge", false)):
+				if str(edge.get("reason", "")).is_empty():
+					_fail("%s 的开放入边 %s(%s) 缺 open_reason 剧情理由" % [str(target), str(edge.get("source", "")), str(edge.get("kind", ""))])
+				continue
+			if not _lock_equivalent(edge.get("lock", {}) as Dictionary, canon):
+				_fail("锁定目标 %s 的入边 %s(%s) 未挂同等条件锁" % [str(target), str(edge.get("source", "")), str(edge.get("kind", ""))])
+	_ok()
+	print("  每个锁定目标的全部入边均挂同等条件或显式开放  OK")
+
+func _inbound_add(inbound: Dictionary, target: String, entry: Dictionary) -> void:
+	if not inbound.has(target):
+		inbound[target] = []
+	(inbound[target] as Array).append(entry)
+
+func _lock_equivalent(a: Dictionary, b: Dictionary) -> bool:
+	var a_ev: Array[String] = _sorted_ids(a.get("evidence", []) as Array)
+	var b_ev: Array[String] = _sorted_ids(b.get("evidence", []) as Array)
+	var a_cl: Array[String] = _sorted_ids(a.get("clues", []) as Array)
+	var b_cl: Array[String] = _sorted_ids(b.get("clues", []) as Array)
+	return a_ev == b_ev and a_cl == b_cl
+
+func _sorted_ids(raw: Array) -> Array[String]:
+	var out: Array[String] = []
+	for value in raw:
+		out.append(str(value))
+	out.sort()
+	return out
 
 func _flood(data: Dictionary, probe: RefCounted) -> Dictionary:
 	var bounds: Rect2 = data.get("bounds", Rect2()) as Rect2
@@ -397,6 +500,15 @@ func _wiring_checks() -> void:
 		print("  有出口的物证 %d 件（≥5）  OK" % outlet.size())
 	else:
 		_fail("有出口的物证应 ≥5，实际 %d" % outlet.size())
+	var missing_outlet: Array[String] = []
+	for eid in evidence_reg.keys():
+		if not outlet.has(str(eid)):
+			missing_outlet.append(str(eid))
+	if missing_outlet.is_empty():
+		_ok()
+		print("  登记物证全部有下游出口（无死胡同）  OK")
+	else:
+		_fail("死胡同物证无出口：" + ", ".join(missing_outlet))
 
 func _find_evidence_spot(ev: String) -> Dictionary:
 	for spot in world.current_scene_data().get("spots", []) as Array:
@@ -423,6 +535,8 @@ func _find_exit_to(target: String) -> Dictionary:
 func _cross_scene_chain() -> void:
 	print("== 跨场景推进链 ==")
 	# A=old_house_yard 取 ev_photo → B=house_hall 取 ev_note → 合成 cl_score → 回 C=house_hall 开锁 → D=basement
+	TurnState.reset()
+	world.puzzle.reload()
 	world.force_scene("old_house_yard")
 	await get_tree().process_frame
 	var photo_spot: Dictionary = _find_evidence_spot("ev_photo")
@@ -456,7 +570,7 @@ func _cross_scene_chain() -> void:
 		_fail("链上找不到 cl_score 组合热点")
 		return
 	world._use_combo(combo_spot)
-	await get_tree().process_frame
+	await get_tree().create_timer(0.65).timeout
 	if world.puzzle.has_clue("cl_score"):
 		_ok()
 		print("  两件物证合成推论 cl_score  OK")
@@ -476,48 +590,97 @@ func _cross_scene_chain() -> void:
 		_fail("合成 cl_score 后应能进入 basement，实际：" + world.scene_id)
 
 func _lock_world_checks() -> void:
-	print("== 锁出口世界级检查 ==")
+	print("== 锁出口世界级检查（拒绝 / 放行 / 状态与 fx 校验）==")
 	var scenes: Dictionary = WorldData.all()
-	var target_scene: String = ""
-	var target_exit: Dictionary = {}
+	var locked_exits: Array = []
 	for id in scenes.keys():
 		var scene_id: String = str(id)
 		var data: Dictionary = scenes[id] as Dictionary
 		for exit in data.get("exits", []) as Array:
 			var e: Dictionary = exit as Dictionary
 			var lock: Dictionary = e.get("lock", {}) as Dictionary
-			if not lock.is_empty() and lock.has("evidence"):
-				target_scene = scene_id
-				target_exit = e
-				break
-		if not target_scene.is_empty():
-			break
-	if target_scene.is_empty():
-		_fail("没有可测的物证锁出口")
+			if not lock.is_empty():
+				locked_exits.append({"source": scene_id, "exit": e})
+	if locked_exits.is_empty():
+		_fail("没有可测的条件锁出口")
 		return
-
-	world.force_scene(target_scene)
-	await get_tree().process_frame
-	world._use_exit(target_exit)
-	await get_tree().process_frame
-	if world.scene_id == target_scene and world._dialog_open:
+	var refusal_ok: int = 0
+	var pass_ok: int = 0
+	for entry in locked_exits:
+		var source: String = str(entry.get("source", ""))
+		var exit: Dictionary = entry.get("exit", {}) as Dictionary
+		var target: String = str(exit.get("to", ""))
+		var lock: Dictionary = exit.get("lock", {}) as Dictionary
+		# 拒绝：清空状态后触发，应留在原场景并弹出缺口提示。
+		TurnState.reset()
+		world.puzzle.reload()
+		world.force_scene(source)
+		await get_tree().process_frame
+		world._use_exit(exit)
+		await get_tree().process_frame
+		if world.scene_id == source and world._dialog_open:
+			refusal_ok += 1
+			print("  锁拒绝 %s→%s：未进入且弹出缺口提示  OK" % [source, target])
+		else:
+			_fail("锁 %s→%s 应拒绝进入并弹出缺口提示" % [source, target])
+		# 放行：补齐物证 / 推论，按真实动画时长 + 余量等待。
+		world._dialog_open = false
+		for eid in lock.get("evidence", []) as Array:
+			world.puzzle.add_evidence(str(eid))
+		for cid in lock.get("clues", []) as Array:
+			world.puzzle.add_clue(str(cid))
+		var anim: String = "door" if str(exit.get("spawn", "")) == "door" else "wipe"
+		var wait_sec: float = 1.05 if anim == "door" else 0.85
+		world._use_exit(exit)
+		await get_tree().create_timer(wait_sec).timeout
+		if world.scene_id != target:
+			_fail("满足条件后应进入 %s，实际 %s" % [target, world.scene_id])
+			continue
+		if world._locked:
+			_fail("进入 %s 后锁状态 _locked 未释放" % target)
+		if world.fx != null and world.fx.get_child_count() != 0:
+			_fail("进入 %s 后 fx 层未拆除，残留 %d 个子节点" % [target, world.fx.get_child_count()])
+		pass_ok += 1
+		print("  锁通过 %s→%s：进入目标、锁释放、fx 已拆除  OK" % [source, target])
+	if refusal_ok == locked_exits.size():
 		_ok()
-		print("  锁拒绝：未进入且弹出缺口提示  OK")
 	else:
-		_fail("锁出口应拒绝进入并给出可读提示")
-
-	var lock: Dictionary = target_exit.get("lock", {}) as Dictionary
-	for eid in lock.get("evidence", []) as Array:
-		world.puzzle.add_evidence(str(eid))
-	world._dialog_open = false
-	world._use_exit(target_exit)
-	await get_tree().create_timer(0.90).timeout
-	if world.scene_id == str(target_exit.get("to", "")):
+		_fail("锁拒绝断言通过 %d / %d" % [refusal_ok, locked_exits.size()])
+	if pass_ok == locked_exits.size():
 		_ok()
-		print("  锁通过：条件满足后进入目标场景  OK")
 	else:
-		_fail("满足条件后应进入 " + str(target_exit.get("to", "")))
+		_fail("锁放行断言通过 %d / %d" % [pass_ok, locked_exits.size()])
 	checks += 1
+
+func _persistence_checks() -> void:
+	print("== 解谜状态持久化 ==")
+	TurnState.reset()
+	var probe: RefCounted = PuzzleState.new()
+	probe.add_evidence("ev_photo")
+	probe.add_evidence("ev_note")
+	probe.try_combine("ev_note", "ev_photo")
+	var raw: String = TurnState.snapshot()
+	# 模拟重启：清空单例状态后按快照读回。
+	TurnState.reset()
+	var after_reset: RefCounted = PuzzleState.new()
+	if after_reset.has_evidence("ev_photo"):
+		_fail("重置后不应残留物证")
+	TurnState.restore_snapshot(raw)
+	var restored: RefCounted = PuzzleState.new()
+	if restored.has_evidence("ev_photo") and restored.has_evidence("ev_note") and restored.has_clue("cl_score"):
+		_ok()
+		print("  写入 → 模拟重启 → 读回，物证与推论仍在  OK")
+	else:
+		_fail("重启读回后物证 / 推论丢失")
+	# 旧档兼容：空串与缺 flags 键的字典不应报错。
+	TurnState.reset()
+	TurnState.restore_snapshot("")
+	var legacy: RefCounted = PuzzleState.new()
+	if legacy.all_evidence().is_empty() and legacy.all_clues().is_empty():
+		_ok()
+		print("  旧档（无 pz_* 键）兼容读回，物证为空数组  OK")
+	else:
+		_fail("旧档缺键时应读为空状态，不报错")
 
 func _report() -> void:
 	print("")

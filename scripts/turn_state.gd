@@ -52,8 +52,6 @@ func set_flag(key: String, value: Variant = true) -> void:
 		return
 	flags[key] = value
 	idle_since = Time.get_ticks_msec()
-	hint_index = 0
-	hint_changed.emit(hint_index)
 
 func get_flag(key: String, fallback: Variant = false) -> Variant:
 	if flags.has(key):

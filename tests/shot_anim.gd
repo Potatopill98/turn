@@ -10,6 +10,7 @@ const PICKUP_DURATION: float = 0.55
 const DOOR_DURATION: float = 0.62
 const DREAM_DURATION: float = 0.90
 const WIPE_DURATION: float = 0.50
+const WAKE_DURATION: float = 0.70
 
 var world = null
 
@@ -33,6 +34,7 @@ func _ready() -> void:
 	await _shot_door()
 	await _shot_dream()
 	await _shot_wipe()
+	await _shot_wake()
 	print("SHOT_ANIM DONE")
 	get_tree().quit(0)
 
@@ -83,3 +85,8 @@ func _shot_wipe() -> void:
 	var start: Callable = func() -> void:
 		world.fx.play_location_wipe(Callable(), Callable())
 	await _run_anim("wipe", WIPE_DURATION, start)
+
+func _shot_wake() -> void:
+	var start: Callable = func() -> void:
+		world.fx.play_wake_out(Callable(), Callable())
+	await _run_anim("wake", WAKE_DURATION, start)

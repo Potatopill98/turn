@@ -16,6 +16,7 @@ const FONT_SIZE_HUD: int = 12
 const SPOT_RADIUS: float = 76.0
 const NPC_RADIUS: float = 84.0
 const EXIT_RADIUS: float = 76.0
+const SAVE_FILE: String = "user://turn_world.cfg"
 
 # 每个地点首访播放的剧情段（act, 起始 beat, 结束 beat 不含）
 const INTROS: Dictionary = {
@@ -84,6 +85,7 @@ var _talk_count: Dictionary = {}
 var puzzle: RefCounted = null
 var fx: CanvasLayer = null
 var _journal_button: Button = null
+var _pickup_busy: bool = false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -108,6 +110,7 @@ func _ready() -> void:
 	fx = AnimFx.new()
 	add_child(fx)
 
+	_load_progress()
 	var start_id: String = str(TurnState.get_flag("explore_scene", "langcheng_room"))
 	if not scenes.has(start_id):
 		start_id = "langcheng_room"
@@ -281,6 +284,7 @@ func _enter(id: String, spawn_name: String = "", play_intro: bool = true) -> voi
 		head_tween.tween_property(_scene_sub, "modulate:a", 1.0, 0.45)
 	TurnState.set_flag("explore_x", at.x)
 	TurnState.set_flag("explore_y", at.y)
+	_save_progress()
 	if play_intro:
 		_play_intro()
 
@@ -537,6 +541,7 @@ func _say_npc(npc: Dictionary) -> void:
 		if not grant.is_empty() and puzzle.add_evidence(grant):
 			granted_name = puzzle.evidence_name(grant)
 			_play_pickup(npc.get("pos", Vector2.ZERO) as Vector2, granted_name)
+			_save_progress()
 		say(str(present.get("reply", "……")), who)
 		if not granted_name.is_empty():
 			toast("出示物证 · 得到 " + granted_name)
@@ -600,10 +605,17 @@ func _use_spot(spot: Dictionary) -> void:
 				text = str(spot.get("arg2"))
 			say(text, "旁白")
 		"travel":
-			travel(arg, "")
+			var travel_lock: Dictionary = spot.get("lock", {}) as Dictionary
+			_gate_navigate(arg, "", "wipe", travel_lock)
 		"wake":
 			_wake()
 		"dream":
+			var dream_lock: Dictionary = spot.get("lock", {}) as Dictionary
+			if puzzle != null and not dream_lock.is_empty():
+				var dream_state: Dictionary = puzzle.lock_state(dream_lock)
+				if not bool(dream_state.get("ok", true)):
+					_report_locked(dream_state)
+					return
 			toast("好像睡着了……")
 			_enter_dream(arg)
 		_:
@@ -614,20 +626,24 @@ func _use_exit(exit: Dictionary) -> void:
 		_wake()
 		return
 	var lock: Dictionary = exit.get("lock", {}) as Dictionary
+	var anim: String = "door" if str(exit.get("spawn", "")) == "door" else "wipe"
+	_gate_navigate(str(exit.get("to", "")), str(exit.get("spawn", "")), anim, lock)
+
+# 统一跳转 gate：出口 / travel 热点 / 梦链全部从这里过锁判定，禁止分支直调 travel。
+func _gate_navigate(to: String, spawn_name: String, anim: String, lock: Dictionary) -> void:
 	if puzzle != null and not lock.is_empty():
 		var state: Dictionary = puzzle.lock_state(lock)
 		if not bool(state.get("ok", true)):
-			_report_locked(exit, state)
+			_report_locked(state)
 			return
-	var anim: String = "door" if str(exit.get("spawn", "")) == "door" else "wipe"
-	travel(str(exit.get("to", "")), str(exit.get("spawn", "")), anim)
+	travel(to, spawn_name, anim)
 
-func _report_locked(exit: Dictionary, state: Dictionary) -> void:
+func _report_locked(state: Dictionary) -> void:
 	var missing: Array = state.get("missing", []) as Array
 	var names: PackedStringArray = PackedStringArray()
 	for mid in missing:
 		var m: String = str(mid)
-		if puzzle.has_clue(m):
+		if PuzzleState.CLUE_NAMES.has(m):
 			names.append(puzzle.clue_name(m))
 		else:
 			names.append(puzzle.evidence_name(m))
@@ -664,12 +680,18 @@ func _use_combo(spot: Dictionary) -> void:
 	_play_pickup(spot.get("pos", Vector2.ZERO) as Vector2, puzzle.clue_name(got))
 	say("推论出来了：" + puzzle.clue_name(got) + "。" + puzzle.clue_text(got), "推论")
 	toast("新推论 · " + puzzle.clue_name(got))
+	_save_progress()
 
 func _play_pickup(at_world: Vector2, text: String) -> void:
-	if fx == null:
+	if fx == null or _pickup_busy:
 		return
+	_pickup_busy = true
+	_lock()
 	var screen: Vector2 = get_viewport().get_canvas_transform() * at_world
-	fx.play_pickup(screen, text, _journal_button, Callable())
+	var done: Callable = func() -> void:
+		_pickup_busy = false
+		_unlock()
+	fx.play_pickup(screen, text, _journal_button, done)
 
 func _enter_dream(target: String) -> void:
 	_return_scene = scene_id
@@ -696,7 +718,16 @@ func _wake() -> void:
 	var back: String = _return_scene if not _return_scene.is_empty() else "house_hall"
 	_return_scene = ""
 	toast("醒了 · 回到刚才的地方")
-	travel(back, "")
+	if fx == null:
+		travel(back, "", "wipe")
+		return
+	_lock()
+	_close_dialog_now()
+	var mid: Callable = func() -> void: _enter(back, "", true)
+	var done: Callable = func() -> void:
+		if not chapter.visible:
+			_unlock()
+	fx.play_wake_out(mid, done)
 
 func _turn_dream_off() -> void:
 	pass
@@ -740,3 +771,18 @@ func current_scene_data() -> Dictionary:
 
 func scene_ids() -> Array:
 	return scenes.keys()
+
+# ---- 进度落盘（R031）：TurnState 快照写入 user://，启动时读回；旧档缺键不报错。
+func _save_progress() -> void:
+	var file: ConfigFile = ConfigFile.new()
+	file.set_value("world", "v3_state", TurnState.snapshot())
+	var result: int = file.save(SAVE_FILE)
+	if result != OK:
+		push_warning("世界进度保存失败：" + error_string(result))
+
+func _load_progress() -> void:
+	var file: ConfigFile = ConfigFile.new()
+	if file.load(SAVE_FILE) != OK:
+		return
+	var raw: String = str(file.get_value("world", "v3_state", ""))
+	TurnState.restore_snapshot(raw)

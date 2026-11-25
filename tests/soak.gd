@@ -7,6 +7,9 @@ var world = null
 
 func _ready() -> void:
 	TurnState.reset()
+	var save_path: String = "user://turn_world.cfg"
+	if FileAccess.file_exists(save_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
 	var packed: PackedScene = load("res://world/world.tscn") as PackedScene
 	world = packed.instantiate()
 	add_child(world)

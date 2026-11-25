@@ -27,7 +27,7 @@ const EVIDENCE_USAGE: Dictionary = {
 	"ev_shoes": "组合：和螺丝对上；可出示给周德海",
 	"ev_list": "组合：和旧磁带并排对上",
 	"ev_tape": "组合：和搬家清单对上",
-	"ev_mirror": "出示：周德海夜里交托的旧镜",
+	"ev_mirror": "开锁：带着旧镜，才看得清入夜秋千的路",
 }
 
 # 组合推论登记（id -> 名称 / 文本）。
@@ -90,6 +90,19 @@ func clue_name(id: String) -> String:
 func clue_text(id: String) -> String:
 	return str(CLUE_TEXTS.get(id, ""))
 
+# 反查一条推论由哪两件物证合成（无序，返回两个物证 id）。
+func clue_sources(id: String) -> Array[String]:
+	var out: Array[String] = []
+	for pair in COMBOS.keys():
+		var key: String = str(pair)
+		if str(COMBOS[key]) == id:
+			var parts: PackedStringArray = key.split("|")
+			if parts.size() == 2:
+				out.append(str(parts[0]))
+				out.append(str(parts[1]))
+			break
+	return out
+
 # ------------------------------------------------------------ 写入
 
 func add_evidence(id: String) -> bool:
@@ -120,6 +133,15 @@ func try_combine(a: String, b: String) -> String:
 		_fresh.append(clue)
 	_save()
 	return clue
+
+func add_clue(id: String) -> bool:
+	if id.is_empty() or _clues.has(id):
+		return false
+	_clues.append(id)
+	if not _fresh.has(id):
+		_fresh.append(id)
+	_save()
+	return true
 
 func clear_fresh() -> void:
 	_fresh.clear()

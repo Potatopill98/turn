@@ -77,7 +77,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(880, 520), "label": "水洼里的倒影", "kind": "talk", "arg": "灯在水里晃。人走过去，影子就散了。"},
 		],
 		"exits": [
-			{"pos": Vector2(860, 545), "to": "town_final", "label": "请假 · 回镇上", "spawn": "bus"},
+			{"pos": Vector2(860, 545), "to": "town_final", "label": "请假 · 回镇上", "spawn": "bus", "lock": {"clues": ["cl_lamp"], "hint": "想通路灯那件事之前，先别急着去终章灯火。"}},
 		],
 	}
 
@@ -149,7 +149,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(360, 470), "to": "old_house_yard", "label": "进老宅院子", "spawn": "door"},
 			{"pos": Vector2(800, 655), "to": "street_cross", "label": "往路口", "spawn": "road"},
 			{"pos": Vector2(860, 455), "to": "playground_day", "label": "去游乐场", "spawn": "road"},
-			{"pos": Vector2(560, 725), "to": "town_final", "label": "镇口灯火", "spawn": "road"},
+			{"pos": Vector2(560, 725), "to": "town_final", "label": "镇口灯火", "spawn": "road", "lock": {"clues": ["cl_lamp"], "hint": "想通路灯那件事之前，先别急着去终章灯火。"}},
 		],
 	}
 	d["old_house_yard"] = {
@@ -167,7 +167,6 @@ static func all() -> Dictionary:
 		"props": [],
 		"npcs": [],
 		"spots": [
-			{"pos": Vector2(480, 350), "label": "门", "kind": "travel", "arg": "house_hall"},
 			{"pos": Vector2(760, 400), "label": "门边的鞋", "kind": "talk", "arg": "门口摆着两双鞋。一双大的，一双小的，都摆得很正——像随时有人会回来穿。"},
 			{"pos": Vector2(420, 430), "label": "门槛缝", "kind": "item", "arg": "e_photo", "gives_evidence": "ev_photo", "arg2": "门槛缝里卡着一张旧照片，边角磨毛了。背面粘着一张复试通知的残片。"},
 		],
@@ -223,7 +222,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(920, 520), "label": "堆着的旧报纸", "kind": "talk", "arg": "报纸的日期停在很多年前。最上面一张，头版是省歌舞团的招生启事。"},
 		],
 		"exits": [
-			{"pos": Vector2(440, 360), "to": "house_hall", "label": "上楼", "spawn": "door"},
+			{"pos": Vector2(440, 360), "to": "house_hall", "label": "上楼", "spawn": "door", "open_edge": true, "open_reason": "从地下室返回堂屋，此前已凭旧照片进入过"},
 		],
 	}
 
@@ -277,7 +276,7 @@ static func all() -> Dictionary:
 		],
 		"exits": [
 			{"pos": Vector2(120, 560), "to": "playground_day", "label": "等到白天", "spawn": "day"},
-			{"pos": Vector2(300, 480), "to": "dream_swing", "label": "坐上秋千 · 入梦", "spawn": "", "lock": {"clues": ["cl_lamp"], "hint": "先想明白这架秋千和灯下那双鞋的关系，再坐上去。"}},
+			{"pos": Vector2(300, 480), "to": "dream_swing", "label": "坐上秋千 · 入梦", "spawn": "", "lock": {"evidence": ["ev_mirror"], "clues": ["cl_lamp"], "hint": "带着夜里那面旧镜，再想明白这架秋千和灯下那双鞋的关系，才坐得上去。"}},
 		],
 	}
 
@@ -327,7 +326,7 @@ static func all() -> Dictionary:
 			{"pos": Vector2(660, 430), "label": "停在四点十分的钟", "kind": "item", "arg": "e_watch"},
 		],
 		"exits": [
-			{"pos": Vector2(480, 520), "to": "house_hall", "label": "回家", "spawn": "door"},
+			{"pos": Vector2(480, 520), "to": "house_hall", "label": "回家", "spawn": "door", "open_edge": true, "open_reason": "从终章返回堂屋，此前已凭旧照片进入过"},
 			{"pos": Vector2(100, 500), "to": "town_road", "label": "再走一遍老街", "spawn": "gate"},
 		],
 	}

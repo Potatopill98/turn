@@ -12,6 +12,7 @@ const PICKUP_DURATION: float = 0.55
 const DOOR_DURATION: float = 0.62
 const DREAM_DURATION: float = 0.90
 const WIPE_DURATION: float = 0.50
+const WAKE_DURATION: float = 0.70
 
 const JOURNAL_TARGET: Vector2 = Vector2(806, 28)
 
@@ -28,12 +29,17 @@ var _ghosts: Array[ColorRect] = []
 # ---- 开门 ----
 var _door_root: Control = null
 var _door_black: ColorRect = null
+var _door_leaf: Panel = null
+var _door_light: ColorRect = null
 
 # ---- 入梦 ----
 var _dream_root: Control = null
 
 # ---- 擦除 ----
 var _wipe_root: Control = null
+
+# ---- 梦醒 veil ----
+var _wake_root: Control = null
 
 func _process(delta: float) -> void:
 	if _pickup_icon != null:
@@ -44,7 +50,11 @@ func _process(delta: float) -> void:
 # ============================================================ 1. 拾取飞行
 
 func play_pickup(from_screen: Vector2, text: String, target: Control, on_done: Callable) -> void:
-	_clear_pickup()
+	# 上一架飞行还没落地时，不抢占、不清掉前一架（R036）。
+	if _pickup_icon != null and is_instance_valid(_pickup_icon):
+		if on_done.is_valid():
+			on_done.call()
+		return
 	_pickup_from = from_screen
 	_pickup_to = JOURNAL_TARGET
 	_pickup_target = target
@@ -57,7 +67,8 @@ func play_pickup(from_screen: Vector2, text: String, target: Control, on_done: C
 	_pickup_icon.add_theme_stylebox_override("panel", SKIN.style(SKIN.GOLD, SKIN.INK, 1, 6))
 	add_child(_pickup_icon)
 
-	_pickup_label = SKIN.make_label("证", 13, SKIN.INK, 26.0, HORIZONTAL_ALIGNMENT_CENTER)
+	var short_name: String = text.left(3)
+	_pickup_label = SKIN.make_label(short_name, 12, SKIN.INK, 26.0, HORIZONTAL_ALIGNMENT_CENTER)
 	_pickup_label.position = Vector2(0, 4)
 	_pickup_icon.add_child(_pickup_label)
 
@@ -132,6 +143,7 @@ func play_door_open(on_done: Callable) -> void:
 	# 门缝光：门后暖光，随门扇打开溢出。
 	var light: ColorRect = ColorRect.new()
 	light.name = "DoorLight"
+	_door_light = light
 	light.color = Color(1.0, 0.84, 0.50, 0.0)
 	light.position = Vector2(300, 0)
 	light.size = Vector2(660, 600)
@@ -141,6 +153,7 @@ func play_door_open(on_done: Callable) -> void:
 	# 门扇：左铰链枢轴，向内旋转。
 	var leaf: Panel = Panel.new()
 	leaf.name = "DoorLeaf"
+	_door_leaf = leaf
 	leaf.position = Vector2(0, 0)
 	leaf.size = Vector2(380, 600)
 	leaf.pivot_offset = Vector2(0, 300)
@@ -175,19 +188,25 @@ func _door_finished(on_done: Callable) -> void:
 	if on_done.is_valid():
 		on_done.call()
 
-# 新场景已经在黑场背后就位：黑场淡出后再拆掉门扇层。
+# 新场景已经在黑场背后就位：黑场仍全黑时先退净门扇与暖光，再压黑淡出、拆层（R034）。
 func door_reveal(on_done: Callable) -> void:
 	if _door_black == null or not is_instance_valid(_door_black):
 		if on_done.is_valid():
 			on_done.call()
 		return
 	var tw: Tween = create_tween()
+	if _door_leaf != null and is_instance_valid(_door_leaf):
+		tw.tween_property(_door_leaf, "modulate:a", 0.0, 0.06)
+	if _door_light != null and is_instance_valid(_door_light):
+		tw.tween_property(_door_light, "modulate:a", 0.0, 0.06)
 	tw.tween_property(_door_black, "color:a", 0.0, 0.18)
 	tw.tween_callback(func() -> void:
 		if _door_root != null and is_instance_valid(_door_root):
 			_door_root.queue_free()
 		_door_root = null
 		_door_black = null
+		_door_leaf = null
+		_door_light = null
 		if on_done.is_valid():
 			on_done.call()
 	)
@@ -316,5 +335,53 @@ func _wipe_finished(on_done: Callable) -> void:
 	if _wipe_root != null and is_instance_valid(_wipe_root):
 		_wipe_root.queue_free()
 	_wipe_root = null
+	if on_done.is_valid():
+		on_done.call()
+
+# ============================================================ 5. 梦醒 veil 抽离（R035）
+# 与入梦相反：梦层面纱由浓变淡、胀环向内收拢，中段切回现实场景，后半 veil 散尽。
+# 不复用换地点的金边擦除横带。
+
+func play_wake_out(on_mid: Callable, on_done: Callable) -> void:
+	_wake_root = Control.new()
+	_wake_root.size = Vector2(960, 600)
+	_wake_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_wake_root)
+
+	var veil: ColorRect = ColorRect.new()
+	veil.name = "WakeVeil"
+	veil.color = Color(0.62, 0.56, 0.46, 0.85)
+	veil.position = Vector2(0, 0)
+	veil.size = Vector2(960, 600)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wake_root.add_child(veil)
+
+	var ring: Panel = Panel.new()
+	ring.name = "WakeRing"
+	ring.position = Vector2(480, 300)
+	ring.size = Vector2(240, 240)
+	ring.pivot_offset = Vector2(120, 120)
+	ring.add_theme_stylebox_override("panel", SKIN.style(Color(1, 1, 1, 0.0), Color(SKIN.GOLD, 0.5), 3, 120))
+	ring.modulate = Color(1, 1, 1, 0.6)
+	_wake_root.add_child(ring)
+
+	var half: float = WAKE_DURATION * 0.5
+	var tw: Tween = create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(veil, "modulate:a", 0.0, WAKE_DURATION)
+	tw.tween_property(ring, "scale", Vector2(0.55, 0.55), WAKE_DURATION).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ring, "modulate:a", 0.0, WAKE_DURATION)
+	tw.set_parallel(false)
+	tw.tween_callback(_wake_mid.bind(on_mid)).set_delay(half)
+	tw.tween_callback(_wake_finished.bind(on_done))
+
+func _wake_mid(on_mid: Callable) -> void:
+	if on_mid.is_valid():
+		on_mid.call()
+
+func _wake_finished(on_done: Callable) -> void:
+	if _wake_root != null and is_instance_valid(_wake_root):
+		_wake_root.queue_free()
+	_wake_root = null
 	if on_done.is_valid():
 		on_done.call()

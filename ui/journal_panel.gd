@@ -24,6 +24,7 @@ var _page_label: Label
 var _selection: Dictionary = {"kind": "goal", "id": ""}
 var _item_page: int = 0
 var _tab: String = "goal"
+var _right_mode: String = "legacy"
 var _was_paused: bool = false
 var _sound: AudioStreamPlayer
 var puzzle: RefCounted = null
@@ -215,6 +216,7 @@ func _refresh() -> void:
 	_act_label.text = str(Data.act_title(TurnState.current_act).get("no", "")) + "  ·  " + str(Data.act_title(TurnState.current_act).get("name", ""))
 	_build_people()
 	_build_items()
+	_build_right_toggles()
 	_build_tabs()
 	_build_detail()
 	var max_page: int = maxi(1, int(ceil(float(Data.item_entries().size()) / float(ITEMS_PER_PAGE))))
@@ -274,6 +276,9 @@ func _build_people() -> void:
 		index += 1
 
 func _build_items() -> void:
+	if _right_mode == "puzzle":
+		_build_puzzle_sections()
+		return
 	var all_items: Array = Data.item_entries()
 	var start: int = _item_page * ITEMS_PER_PAGE
 	var end: int = mini(start + ITEMS_PER_PAGE, all_items.size())
@@ -322,7 +327,24 @@ func _build_items() -> void:
 		else:
 			card.disabled = false
 			card.modulate = Color(1, 1, 1, 0.55)
-	_build_puzzle_sections()
+
+func _build_right_toggles() -> void:
+	var legacy_btn: Button = SKIN.make_button("旧物", 12, 90.0, 24.0)
+	legacy_btn.position = Vector2(492, 64)
+	if _right_mode == "legacy":
+		legacy_btn.add_theme_stylebox_override("normal", SKIN.style(SKIN.GOLD, SKIN.INK, 2, 4))
+	legacy_btn.pressed.connect(_select_right_mode.bind("legacy"))
+	_items_box.add_child(legacy_btn)
+	var puzzle_btn: Button = SKIN.make_button("解谜", 12, 90.0, 24.0)
+	puzzle_btn.position = Vector2(590, 64)
+	if _right_mode == "puzzle":
+		puzzle_btn.add_theme_stylebox_override("normal", SKIN.style(SKIN.GOLD, SKIN.INK, 2, 4))
+	puzzle_btn.pressed.connect(_select_right_mode.bind("puzzle"))
+	_items_box.add_child(puzzle_btn)
+
+func _select_right_mode(mode: String) -> void:
+	_right_mode = mode
+	_refresh()
 
 func _build_puzzle_sections() -> void:
 	if puzzle == null:
@@ -332,38 +354,43 @@ func _build_puzzle_sections() -> void:
 	var clue_ids: Array[String] = puzzle.all_clues()
 
 	var ev_title: Label = SKIN.make_label("现场物证（解谜）  %d" % ev_ids.size(), 13, SKIN.INK)
-	ev_title.position = Vector2(492, 318)
+	ev_title.position = Vector2(492, 100)
 	_items_box.add_child(ev_title)
 	var ev_index: int = 0
 	for eid in ev_ids:
-		var chip: Panel = _puzzle_chip(Vector2(492 + (ev_index % 3) * 142, 340 + (ev_index / 3) * 40), puzzle.evidence_name(eid), fresh.has(eid), puzzle.usage_of(eid))
+		var chip: Button = _puzzle_chip(Vector2(492 + (ev_index % 3) * 142, 124 + (ev_index / 3) * 40), puzzle.evidence_name(eid), fresh.has(eid), puzzle.usage_of(eid), "evidence", eid)
 		_items_box.add_child(chip)
 		ev_index += 1
 	if ev_ids.is_empty():
 		var empty_ev: Label = SKIN.make_label("还没有捡到现场物证。", 11, SKIN.INK_SOFT)
-		empty_ev.position = Vector2(492, 340)
+		empty_ev.position = Vector2(492, 124)
 		_items_box.add_child(empty_ev)
 
 	var clue_title: Label = SKIN.make_label("组合推论  %d" % clue_ids.size(), 13, SKIN.INK)
-	clue_title.position = Vector2(492, 402)
+	clue_title.position = Vector2(492, 244)
 	_items_box.add_child(clue_title)
 	var clue_index: int = 0
 	for cid in clue_ids:
-		var chip2: Panel = _puzzle_chip(Vector2(492 + (clue_index % 3) * 142, 424), puzzle.clue_name(cid), fresh.has(cid), "")
+		var chip2: Button = _puzzle_chip(Vector2(492 + (clue_index % 3) * 142, 268), puzzle.clue_name(cid), fresh.has(cid), "", "clue", cid)
 		_items_box.add_child(chip2)
 		clue_index += 1
 	if clue_ids.is_empty():
 		var empty_clue: Label = SKIN.make_label("把两件物证并排对上，才能推出一条推论。", 11, SKIN.INK_SOFT)
-		empty_clue.position = Vector2(492, 424)
+		empty_clue.position = Vector2(492, 268)
 		_items_box.add_child(empty_clue)
 
-func _puzzle_chip(at: Vector2, text: String, is_fresh: bool, usage: String) -> Panel:
-	var chip: Panel = Panel.new()
+func _puzzle_chip(at: Vector2, text: String, is_fresh: bool, usage: String, kind: String, id: String) -> Button:
+	var chip: Button = Button.new()
 	chip.position = at
 	var chip_height: int = 40 if not usage.is_empty() else 26
 	chip.size = Vector2(136, chip_height)
 	var border: Color = SKIN.GOLD if is_fresh else Color(0.55, 0.45, 0.30, 0.35)
-	chip.add_theme_stylebox_override("panel", SKIN.style(Color(0.94, 0.89, 0.79, 0.92), border, 2 if is_fresh else 1, 4))
+	chip.add_theme_stylebox_override("normal", SKIN.style(Color(0.94, 0.89, 0.79, 0.92), border, 2 if is_fresh else 1, 4))
+	chip.add_theme_stylebox_override("hover", SKIN.style(Color(0.96, 0.91, 0.81, 0.95), SKIN.GOLD_DIM, 1, 4))
+	chip.add_theme_stylebox_override("pressed", SKIN.style(SKIN.GOLD, SKIN.GOLD, 1, 4))
+	var selected: bool = str(_selection.get("kind", "")) == kind and str(_selection.get("id", "")) == id
+	if selected:
+		chip.add_theme_stylebox_override("normal", SKIN.style(SKIN.GOLD, SKIN.INK, 2, 4))
 	var label: Label = SKIN.make_label(text, 10, SKIN.INK, 118.0)
 	label.position = Vector2(8, 4)
 	chip.add_child(label)
@@ -375,7 +402,13 @@ func _puzzle_chip(at: Vector2, text: String, is_fresh: bool, usage: String) -> P
 		var badge: Label = SKIN.make_label("新", 10, SKIN.GOLD, 16.0, HORIZONTAL_ALIGNMENT_CENTER)
 		badge.position = Vector2(116, 4)
 		chip.add_child(badge)
+	chip.pressed.connect(_select_puzzle.bind(kind, id))
 	return chip
+
+func _select_puzzle(kind: String, id: String) -> void:
+	_selection = {"kind": kind, "id": id}
+	_tab = "goal"
+	_refresh()
 
 func _build_tabs() -> void:
 	var tabs := [
@@ -431,6 +464,21 @@ func _build_detail() -> void:
 		title_text = str(item.get("name", "")) + "  ·  " + str(Data.act_title(str(item.get("act", ""))).get("name", ""))
 		body_text = str(item.get("text", ""))
 		foot_text = "记于手记" if TurnState.items.has(id) else "尚未记录"
+	elif kind == "evidence" and puzzle != null and puzzle.has_evidence(id):
+		title_text = puzzle.evidence_name(id)
+		var usage: String = puzzle.usage_of(id)
+		body_text = usage if not usage.is_empty() else "现场捡到的物证，已收进手记。"
+		foot_text = "现场物证 · 已记录"
+	elif kind == "clue" and puzzle != null and puzzle.has_clue(id):
+		title_text = puzzle.clue_name(id)
+		var sources: Array[String] = puzzle.clue_sources(id)
+		var src_names: PackedStringArray = PackedStringArray()
+		for sid in sources:
+			src_names.append(puzzle.evidence_name(str(sid)))
+		var source_line: String = "合成自：" + " + ".join(src_names) if not src_names.is_empty() else ""
+		var clue_body: String = puzzle.clue_text(id)
+		body_text = clue_body + ("\n" + source_line if not source_line.is_empty() else "")
+		foot_text = "推论来自两件物证的并排对照"
 	elif kind == "hint":
 		title_text = "提示  " + str(TurnState.hint_index) + " / 3"
 		body_text = TurnState.current_hint() if TurnState.hint_index > 0 else "先自己找。卡住了，再按下面的按钮。"
