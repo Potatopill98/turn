@@ -26,20 +26,46 @@ var _pickup_target: Control = null
 var _pickup_done: Callable = Callable()
 var _ghosts: Array[ColorRect] = []
 
-# ---- 开门 ----
-var _door_root: Control = null
-var _door_black: ColorRect = null
-var _door_leaf: Panel = null
-var _door_light: ColorRect = null
+# ---- 转场层自持所有权（R112 泄漏修复）----
+# 每类转场一个独立状态字典：root / tween / 子节点引用都归自己这一层；
+# 完成回调只通过 bind 捕获自己那个 root，不读写全局槽位，避免旧回调误删新层、旧层泄漏。
+var _layers: Dictionary = {
+	"door": {},
+	"dream": {},
+	"wipe": {},
+	"wake": {},
+}
 
-# ---- 入梦 ----
-var _dream_root: Control = null
+# 同类转场重入：先按本层自己的即毁路径收掉旧层（杀 tween + queue_free），再开新层。
+func _teardown_layer(key: String) -> void:
+	var st: Dictionary = _layers.get(key, {}) as Dictionary
+	var old_tween: Tween = st.get("tween", null) as Tween
+	if old_tween != null and is_instance_valid(old_tween):
+		old_tween.kill()
+	var old_root: Control = st.get("root", null) as Control
+	if old_root != null and is_instance_valid(old_root):
+		old_root.queue_free()
+	_layers[key] = {}
 
-# ---- 擦除 ----
-var _wipe_root: Control = null
+# 完成回调：只释放自己这个 root；若全局指针已被新层顶替，则不动新层。
+func _finish_layer(key: String, root: Object, on_done: Callable, free_root: bool) -> void:
+	var st: Dictionary = _layers.get(key, {}) as Dictionary
+	if st.get("root", null) == root:
+		_layers[key] = {}
+	if free_root and root != null and root is Control and is_instance_valid(root):
+		(root as Control).queue_free()
+	if on_done.is_valid():
+		on_done.call()
 
-# ---- 梦醒 veil ----
-var _wake_root: Control = null
+# 供泄漏测试统计本层现存节点数。
+func fx_control_count() -> int:
+	return _count_controls(self)
+
+func _count_controls(node: Node) -> int:
+	var total: int = 1 if node is Control else 0
+	for child in node.get_children():
+		total += _count_controls(child)
+	return total
 
 func _process(delta: float) -> void:
 	if _pickup_icon != null:
@@ -135,30 +161,29 @@ func _clear_pickup() -> void:
 # ============================================================ 2. 开门
 
 func play_door_open(on_done: Callable) -> void:
-	_door_root = Control.new()
-	_door_root.size = Vector2(960, 600)
-	_door_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_door_root)
+	_teardown_layer("door")
+	var root: Control = Control.new()
+	root.size = Vector2(960, 600)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
 
 	# 门缝光：门后暖光，随门扇打开溢出。
 	var light: ColorRect = ColorRect.new()
 	light.name = "DoorLight"
-	_door_light = light
 	light.color = Color(1.0, 0.84, 0.50, 0.0)
 	light.position = Vector2(300, 0)
 	light.size = Vector2(660, 600)
 	light.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_door_root.add_child(light)
+	root.add_child(light)
 
 	# 门扇：左铰链枢轴，向内旋转。
 	var leaf: Panel = Panel.new()
 	leaf.name = "DoorLeaf"
-	_door_leaf = leaf
 	leaf.position = Vector2(0, 0)
 	leaf.size = Vector2(380, 600)
 	leaf.pivot_offset = Vector2(0, 300)
 	leaf.add_theme_stylebox_override("panel", SKIN.style(Color("#4a3826"), Color("#2a1f14"), 2, 2))
-	_door_root.add_child(leaf)
+	root.add_child(leaf)
 	for i in 4:
 		var plank: ColorRect = ColorRect.new()
 		plank.color = Color(1.0, 1.0, 1.0, 0.08)
@@ -173,51 +198,48 @@ func play_door_open(on_done: Callable) -> void:
 	black.position = Vector2(0, 0)
 	black.size = Vector2(960, 600)
 	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_door_root.add_child(black)
-	_door_black = black
+	root.add_child(black)
 
-	var tw: Tween = create_tween()
+	var tw: Tween = root.create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(leaf, "rotation", -1.55, 0.40).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(light, "color:a", 0.55, 0.18).set_delay(0.10)
 	tw.tween_property(black, "color:a", 1.0, 0.22).set_delay(0.40)
 	tw.set_parallel(false)
-	tw.tween_callback(_door_finished.bind(on_done))
-
-func _door_finished(on_done: Callable) -> void:
-	if on_done.is_valid():
-		on_done.call()
+	tw.tween_callback(func() -> void:
+		# 开门阶段不拆层：root 要留到 door_reveal 再拆，不能在这里清空状态引用。
+		if on_done.is_valid():
+			on_done.call())
+	_layers["door"] = {"root": root, "tween": tw, "black": black, "leaf": leaf, "light": light}
 
 # 新场景已经在黑场背后就位：黑场仍全黑时先退净门扇与暖光，再压黑淡出、拆层（R034）。
 func door_reveal(on_done: Callable) -> void:
-	if _door_black == null or not is_instance_valid(_door_black):
+	var st: Dictionary = _layers.get("door", {}) as Dictionary
+	var root: Control = st.get("root", null) as Control
+	var black: ColorRect = st.get("black", null) as ColorRect
+	if root == null or not is_instance_valid(root) or black == null or not is_instance_valid(black):
 		if on_done.is_valid():
 			on_done.call()
 		return
-	var tw: Tween = create_tween()
-	if _door_leaf != null and is_instance_valid(_door_leaf):
-		tw.tween_property(_door_leaf, "modulate:a", 0.0, 0.06)
-	if _door_light != null and is_instance_valid(_door_light):
-		tw.tween_property(_door_light, "modulate:a", 0.0, 0.06)
-	tw.tween_property(_door_black, "color:a", 0.0, 0.18)
-	tw.tween_callback(func() -> void:
-		if _door_root != null and is_instance_valid(_door_root):
-			_door_root.queue_free()
-		_door_root = null
-		_door_black = null
-		_door_leaf = null
-		_door_light = null
-		if on_done.is_valid():
-			on_done.call()
-	)
+	var leaf: Panel = st.get("leaf", null) as Panel
+	var light: ColorRect = st.get("light", null) as ColorRect
+	var tw: Tween = root.create_tween()
+	if leaf != null and is_instance_valid(leaf):
+		tw.tween_property(leaf, "modulate:a", 0.0, 0.06)
+	if light != null and is_instance_valid(light):
+		tw.tween_property(light, "modulate:a", 0.0, 0.06)
+	tw.tween_property(black, "color:a", 0.0, 0.18)
+	tw.tween_callback(func() -> void: _finish_layer("door", root, on_done, true))
+	st["tween"] = tw
 
 # ============================================================ 3. 入梦
 
 func play_dream_in(on_mid: Callable, on_done: Callable) -> void:
-	_dream_root = Control.new()
-	_dream_root.size = Vector2(960, 600)
-	_dream_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_dream_root)
+	_teardown_layer("dream")
+	var root: Control = Control.new()
+	root.size = Vector2(960, 600)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
 
 	# 灰度层。
 	var gray: ColorRect = ColorRect.new()
@@ -226,7 +248,7 @@ func play_dream_in(on_mid: Callable, on_done: Callable) -> void:
 	gray.position = Vector2(0, 0)
 	gray.size = Vector2(960, 600)
 	gray.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_dream_root.add_child(gray)
+	root.add_child(gray)
 
 	# 径向缩放环：从中心向外胀开。
 	var ring: Panel = Panel.new()
@@ -236,12 +258,12 @@ func play_dream_in(on_mid: Callable, on_done: Callable) -> void:
 	ring.pivot_offset = Vector2(120, 120)
 	ring.add_theme_stylebox_override("panel", SKIN.style(Color(1, 1, 1, 0.0), Color(SKIN.GOLD, 0.6), 3, 120))
 	ring.modulate = Color(1, 1, 1, 0.5)
-	_dream_root.add_child(ring)
+	root.add_child(ring)
 
 	# 白噪闪：一批随机小方块 + 一次全白闪光。
 	var noise: Control = Control.new()
 	noise.name = "DreamNoise"
-	_dream_root.add_child(noise)
+	root.add_child(noise)
 	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 	rng.seed = 20261126
 	for i in 36:
@@ -257,9 +279,9 @@ func play_dream_in(on_mid: Callable, on_done: Callable) -> void:
 	flash.position = Vector2(0, 0)
 	flash.size = Vector2(960, 600)
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_dream_root.add_child(flash)
+	root.add_child(flash)
 
-	var tw: Tween = create_tween()
+	var tw: Tween = root.create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(gray, "color:a", 0.55, 0.35)
 	tw.tween_property(ring, "scale", Vector2(1.6, 1.6), DREAM_DURATION).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
@@ -273,26 +295,21 @@ func play_dream_in(on_mid: Callable, on_done: Callable) -> void:
 	tw.set_parallel(false)
 	tw.tween_callback(_dream_mid.bind(on_mid)).set_delay(0.45)
 	tw.tween_property(gray, "color:a", 0.12, 0.40)
-	tw.tween_callback(_dream_finished.bind(on_done))
+	tw.tween_callback(func() -> void: _finish_layer("dream", root, on_done, true))
+	_layers["dream"] = {"root": root, "tween": tw}
 
 func _dream_mid(on_mid: Callable) -> void:
 	if on_mid.is_valid():
 		on_mid.call()
 
-func _dream_finished(on_done: Callable) -> void:
-	if _dream_root != null and is_instance_valid(_dream_root):
-		_dream_root.queue_free()
-	_dream_root = null
-	if on_done.is_valid():
-		on_done.call()
-
 # ============================================================ 4. 换地点擦除
 
 func play_location_wipe(on_mid: Callable, on_done: Callable) -> void:
-	_wipe_root = Control.new()
-	_wipe_root.size = Vector2(960, 600)
-	_wipe_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_wipe_root)
+	_teardown_layer("wipe")
+	var root: Control = Control.new()
+	root.size = Vector2(960, 600)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
 
 	var cover: ColorRect = ColorRect.new()
 	cover.name = "WipeCover"
@@ -301,7 +318,7 @@ func play_location_wipe(on_mid: Callable, on_done: Callable) -> void:
 	cover.size = Vector2(960, 600)
 	cover.modulate = Color(1, 1, 1, 0.0)
 	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_wipe_root.add_child(cover)
+	root.add_child(cover)
 
 	var band: ColorRect = ColorRect.new()
 	band.name = "WipeBand"
@@ -310,10 +327,10 @@ func play_location_wipe(on_mid: Callable, on_done: Callable) -> void:
 	band.size = Vector2(20, 600)
 	band.modulate = Color(1, 1, 1, 0.0)
 	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_wipe_root.add_child(band)
+	root.add_child(band)
 
 	var half: float = WIPE_DURATION * 0.5
-	var tw: Tween = create_tween()
+	var tw: Tween = root.create_tween()
 	# 前半：擦除盖入 + 金边横扫；中段切入新场景；后半：擦除淡出露出新场景。
 	tw.set_parallel(true)
 	tw.tween_property(cover, "modulate:a", 1.0, half)
@@ -325,28 +342,23 @@ func play_location_wipe(on_mid: Callable, on_done: Callable) -> void:
 	tw.tween_property(cover, "modulate:a", 0.0, half)
 	tw.tween_property(band, "modulate:a", 0.0, 0.10)
 	tw.set_parallel(false)
-	tw.tween_callback(_wipe_finished.bind(on_done))
+	tw.tween_callback(func() -> void: _finish_layer("wipe", root, on_done, true))
+	_layers["wipe"] = {"root": root, "tween": tw}
 
 func _wipe_mid(on_mid: Callable) -> void:
 	if on_mid.is_valid():
 		on_mid.call()
-
-func _wipe_finished(on_done: Callable) -> void:
-	if _wipe_root != null and is_instance_valid(_wipe_root):
-		_wipe_root.queue_free()
-	_wipe_root = null
-	if on_done.is_valid():
-		on_done.call()
 
 # ============================================================ 5. 梦醒 veil 抽离（R035）
 # 与入梦相反：梦层面纱由浓变淡、胀环向内收拢，中段切回现实场景，后半 veil 散尽。
 # 不复用换地点的金边擦除横带。
 
 func play_wake_out(on_mid: Callable, on_done: Callable) -> void:
-	_wake_root = Control.new()
-	_wake_root.size = Vector2(960, 600)
-	_wake_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_wake_root)
+	_teardown_layer("wake")
+	var root: Control = Control.new()
+	root.size = Vector2(960, 600)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
 
 	var veil: ColorRect = ColorRect.new()
 	veil.name = "WakeVeil"
@@ -354,7 +366,7 @@ func play_wake_out(on_mid: Callable, on_done: Callable) -> void:
 	veil.position = Vector2(0, 0)
 	veil.size = Vector2(960, 600)
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_wake_root.add_child(veil)
+	root.add_child(veil)
 
 	var ring: Panel = Panel.new()
 	ring.name = "WakeRing"
@@ -363,25 +375,19 @@ func play_wake_out(on_mid: Callable, on_done: Callable) -> void:
 	ring.pivot_offset = Vector2(120, 120)
 	ring.add_theme_stylebox_override("panel", SKIN.style(Color(1, 1, 1, 0.0), Color(SKIN.GOLD, 0.5), 3, 120))
 	ring.modulate = Color(1, 1, 1, 0.6)
-	_wake_root.add_child(ring)
+	root.add_child(ring)
 
 	var half: float = WAKE_DURATION * 0.5
-	var tw: Tween = create_tween()
+	var tw: Tween = root.create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(veil, "modulate:a", 0.0, WAKE_DURATION)
 	tw.tween_property(ring, "scale", Vector2(0.55, 0.55), WAKE_DURATION).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(ring, "modulate:a", 0.0, WAKE_DURATION)
 	tw.set_parallel(false)
 	tw.tween_callback(_wake_mid.bind(on_mid)).set_delay(half)
-	tw.tween_callback(_wake_finished.bind(on_done))
+	tw.tween_callback(func() -> void: _finish_layer("wake", root, on_done, true))
+	_layers["wake"] = {"root": root, "tween": tw}
 
 func _wake_mid(on_mid: Callable) -> void:
 	if on_mid.is_valid():
 		on_mid.call()
-
-func _wake_finished(on_done: Callable) -> void:
-	if _wake_root != null and is_instance_valid(_wake_root):
-		_wake_root.queue_free()
-	_wake_root = null
-	if on_done.is_valid():
-		on_done.call()

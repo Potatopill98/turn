@@ -13,19 +13,29 @@ const RED := Color("#b8564a")
 const GREEN := Color("#7f9c74")
 const SHADOW := Color(0.05, 0.06, 0.07, 0.72)
 
-static var _font: SystemFont
-static var _hand: SystemFont
+const EMBEDDED_FONT: String = "res://fonts/NotoSansSC-Regular.ttf"
 
-static func font() -> SystemFont:
+static var _font: Font = null
+static var _hand: Font = null
+
+static func font() -> Font:
 	if _font == null:
-		_font = SystemFont.new()
-		_font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC"])
+		var embedded: FontFile = FontFile.new()
+		if ResourceLoader.exists(EMBEDDED_FONT) and embedded.load_dynamic_font(EMBEDDED_FONT) == OK:
+			_font = embedded
+		else:
+			# 干净机器上内嵌字体缺失时的降级回退链。
+			var sys: SystemFont = SystemFont.new()
+			sys.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "SimHei"])
+			_font = sys
 	return _font
 
-static func hand() -> SystemFont:
+static func hand() -> Font:
 	if _hand == null:
-		_hand = SystemFont.new()
-		_hand.font_names = PackedStringArray(["KaiTi", "STKaiti", "Microsoft YaHei"])
+		# 手写体暂未内嵌可商用字体：回退系统楷体链，缺失时再落黑体。
+		var sys: SystemFont = SystemFont.new()
+		sys.font_names = PackedStringArray(["KaiTi", "STKaiti", "Microsoft YaHei", "Noto Sans CJK SC", "SimHei"])
+		_hand = sys
 	return _hand
 
 static func style(bg: Color, border: Color, border_width: int = 1, radius: int = 4) -> StyleBoxFlat:

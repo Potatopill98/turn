@@ -37,7 +37,7 @@ func _ready() -> void:
 	get_tree().quit()
 
 class GridOverlay extends Node2D:
-	var font: SystemFont
+	var font: Font
 
 	func _ready() -> void:
 		font = SKIN.font()

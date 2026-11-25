@@ -23,7 +23,7 @@ var on_exit: Callable = Callable()
 var nearest_index: int = -1
 var toast: String = ""
 var toast_time: float = 0.0
-var font: SystemFont
+var font: Font
 var sound: AudioStreamPlayer
 
 func _ready() -> void:

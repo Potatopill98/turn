@@ -10,7 +10,7 @@ const PlayerState = preload("res://world/player_state.gd")
 var data: Dictionary = {}
 var player = null
 var world = null
-var font: SystemFont
+var font: Font
 var _pulses: Array = []
 var _tex: Dictionary = {}
 var _w_cache: Dictionary = {}

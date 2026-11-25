@@ -57,6 +57,7 @@ func _ready() -> void:
 	await _present_flow_checks()
 	_ending_tier_checks()
 	await _title_checks()
+	_b6_delivery_checks()
 	_random_rounds()
 	_report()
 
@@ -1044,6 +1045,69 @@ func _title_checks() -> void:
 	else:
 		_fail("标题按钮数量应为 3，实际 %d" % button_count)
 	title.queue_free()
+
+func _b6_delivery_checks() -> void:
+	print("== B6 交付项断言（R101/R103/R104/R109/R110）==")
+	# 内嵌 OFL 字体：文件存在且可被 FontFile 加载。
+	var font_path: String = "res://fonts/NotoSansSC-Regular.ttf"
+	if FileAccess.file_exists(font_path):
+		var ff: FontFile = FontFile.new()
+		if ff.load_dynamic_font(font_path) == OK:
+			_ok()
+			print("  内嵌中文字体加载成功  OK")
+		else:
+			_fail("内嵌字体存在但 FontFile 加载失败")
+	else:
+		_fail("缺少内嵌中文字体 " + font_path)
+
+	# 坏档：乱码快照必须判失败，不抛空引用。
+	TurnState.reset()
+	if not TurnState.restore_snapshot("{{{坏档"):
+		_ok()
+		print("  损坏快照 restore 返回 false，不静默吞错  OK")
+	else:
+		_fail("损坏快照应判恢复失败")
+
+	# 两个纯叙事梦境：可回看台词总量达到 3s 量级（38 字/s ≈ 114 字，取 110 阈值）。
+	for dream_id in ["dream_alley", "dream_box"]:
+		var scene: Dictionary = WorldData.all().get(dream_id, {}) as Dictionary
+		var chars: int = 0
+		for spot in scene.get("spots", []) as Array:
+			var s: Dictionary = spot as Dictionary
+			chars += str(s.get("arg", "")).length()
+			chars += str(s.get("arg2", "")).length()
+		if chars >= 110:
+			_ok()
+			print("  %s 可回看台词 %d 字（≥110）  OK" % [dream_id, chars])
+		else:
+			_fail("%s 台词仅 %d 字，不足 3s 有效内容" % [dream_id, chars])
+
+	# 缩放 / 最小窗口策略已写入工程设置。
+	var aspect: String = str(ProjectSettings.get_setting("display/window/stretch/aspect", ""))
+	var min_w: int = int(ProjectSettings.get_setting("display/window/size/min_width", 0))
+	var min_h: int = int(ProjectSettings.get_setting("display/window/size/min_height", 0))
+	if aspect == "keep" and min_w >= 960 and min_h >= 600:
+		_ok()
+		print("  stretch aspect=keep，最小窗口 %dx%d  OK" % [min_w, min_h])
+	else:
+		_fail("缩放策略缺失：aspect=%s min=%dx%d" % [aspect, min_w, min_h])
+
+	# 导出预设：非游戏目录进入排除清单。
+	var preset_path: String = "res://export_presets.cfg"
+	if FileAccess.file_exists(preset_path):
+		var cfg: ConfigFile = ConfigFile.new()
+		if cfg.load(preset_path) == OK:
+			var exclude: String = str(cfg.get_value("preset.0", "exclude_filter", ""))
+			var product: String = str(cfg.get_value("preset.0.options", "application/product_name", ""))
+			if exclude.contains("tests/") and exclude.contains("docs/") and exclude.contains("turn-town-whitebox-github-upload/") and not product.is_empty():
+				_ok()
+				print("  导出预设排除 tests/docs/whitebox，产品名=%s  OK" % product)
+			else:
+				_fail("导出预设排除清单或产品名缺失：exclude=%s product=%s" % [exclude, product])
+		else:
+			_fail("export_presets.cfg 解析失败")
+	else:
+		_fail("缺少 export_presets.cfg")
 
 func _report() -> void:
 	print("")

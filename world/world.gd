@@ -84,6 +84,8 @@ var _dialog_label: Label = null
 var _dialog_speaker: Label = null
 var _dialog_hint: Label = null
 var _dialog_open: bool = false
+var _last_load_ok: bool = false
+var _save_existed: bool = false
 var _type_full: String = ""
 var _type_progress: float = 0.0
 var _hint_band: ColorRect = null
@@ -156,6 +158,9 @@ func _ready() -> void:
 		start_id = "langcheng_room"
 	var start_spawn: String = str(TurnState.get_flag("explore_spawn", ""))
 	_enter(start_id, start_spawn, false)
+	# 坏档不静默：加载前已存在的存档读不回来时，开局给一次可见中文提示（R104）。
+	if FileAccess.file_exists(SAVE_FILE) and not _last_load_ok and _save_existed:
+		toast("存档读取出错，已从开头继续。")
 
 func _build_hud() -> void:
 	_hud = CanvasLayer.new()
@@ -878,6 +883,7 @@ func _use_combo(spot: Dictionary) -> void:
 	var combo: Dictionary = spot.get("combo", {}) as Dictionary
 	var clue: String = str(combo.get("clue", ""))
 	if puzzle == null:
+		say("这里两样东西或许能对上，但现在手记还打不开。", "旁白")
 		return
 	if puzzle.has_clue(clue):
 		say("这条推论已经记在手记里了。", "推论")
@@ -986,10 +992,20 @@ func _save_progress() -> void:
 
 func _load_progress() -> bool:
 	var file: ConfigFile = ConfigFile.new()
+	_save_existed = FileAccess.file_exists(SAVE_FILE)
 	if file.load(SAVE_FILE) != OK:
+		_last_load_ok = false
 		return false
 	var raw: String = str(file.get_value("world", "v3_state", ""))
-	return TurnState.restore_snapshot(raw)
+	if raw.is_empty():
+		_last_load_ok = false
+		return false
+	var parsed: Variant = JSON.parse_string(raw)
+	if not (parsed is Dictionary):
+		_last_load_ok = false
+		return false
+	_last_load_ok = TurnState.restore_snapshot(raw)
+	return _last_load_ok
 
 func has_save() -> bool:
 	return FileAccess.file_exists(SAVE_FILE)

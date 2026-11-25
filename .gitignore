@@ -1,2 +1,7 @@
 .godot/
 export_credentials.cfg
+build/
+*.tmp
+tests/zz_*
+docs/*.docx
+turn-town-whitebox-github-upload/
