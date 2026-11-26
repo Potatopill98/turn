@@ -19,6 +19,10 @@ const SPOT_RADIUS: float = 76.0
 const NPC_RADIUS: float = 84.0
 const EXIT_RADIUS: float = 76.0
 const SAVE_FILE: String = "user://turn_world.cfg"
+# 相机跟随：基础推近倍率（人物在屏幕上更大，且留出平移余量）、朝向预看偏移、对话时下沉让位。
+const FOLLOW_ZOOM: float = 1.35
+const CAM_LEAD: float = 20.0
+const DIALOG_DOLLY: float = 24.0
 
 # 出示面板卡 id -> 世界层物证 id：A2 正确卡走完后，走原 present 奖励链。
 const PANEL_CARD_TO_EVIDENCE: Dictionary = {
@@ -263,17 +267,20 @@ func _build_hud() -> void:
 
 	_hint_band = ColorRect.new()
 	_hint_band.color = Color(0.06, 0.07, 0.08, 0.62)
-	_hint_band.position = Vector2(0, 500)
-	_hint_band.size = Vector2(960, 36)
+	_hint_band.position = Vector2(0, 514)
+	_hint_band.size = Vector2(960, 26)
 	_hint_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_root.add_child(_hint_band)
 	_hint_label = SKIN.make_label("WASD / 方向键 走动　E 查看与交谈　I 手记　Esc 关闭", 12, Color(SKIN.PAPER, 0.82))
-	_hint_label.position = Vector2(24, 508)
+	_hint_label.position = Vector2(24, 517)
 	_hud_root.add_child(_hint_label)
 
 	_target_label = SKIN.make_label("", 12, SKIN.GOLD, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
-	_target_label.position = Vector2(616, 508)
+	_target_label.position = Vector2(616, 517)
 	_hud_root.add_child(_target_label)
+
+	# 气泡改作底栏交互提示，必须压在提示带之上（否则被半透明底色蒙暗）。
+	_hud_root.move_child(_bubble, _target_label.get_index() + 1)
 
 	var journal_button: Button = SKIN.make_button("手记  I", 12, 92.0, 28.0)
 	journal_button.position = Vector2(760, 14)
@@ -340,7 +347,8 @@ func _enter(id: String, spawn_name: String = "", play_intro: bool = true) -> voi
 	if not spawn_name.is_empty() and spawns.has(spawn_name):
 		at = spawns[spawn_name] as Vector2
 	player.reset(at, 1)
-	player.height = float(data.get("player_height", 92.0))
+	var char_scale: float = float(data.get("char_scale", WorldData.CHAR_SCALE))
+	player.height = float(data.get("player_height", 84.0)) * char_scale
 	view.setup(data, player, self)
 	_zoom_scale = 0.94
 	_update_camera(true)
@@ -468,13 +476,38 @@ func _set_zoom_scale(value: float) -> void:
 func _update_camera(force: bool) -> void:
 	var bounds: Rect2 = data.get("bounds", Rect2(0, 0, 960, 600)) as Rect2
 	var vp: Vector2 = Vector2(960, 600)
-	var zoom: float = 1.0
+	var fit: float = 1.0
 	if bounds.size.y < vp.y:
-		zoom = vp.y / bounds.size.y
-	var base: float = zoom * _zoom_scale
+		fit = vp.y / bounds.size.y
+	# R202：固定 1.0 倍率时，960×600 场景铺满屏，相机无处可移，看起来"画面是固定的"。
+	# 现在至少推近 FOLLOW_ZOOM，画面随人平移，人物在屏幕上也更大。
+	var base: float = maxf(fit, FOLLOW_ZOOM) * _zoom_scale
 	camera.zoom = Vector2(base, base)
 	var half: Vector2 = vp * 0.5 / base
 	var target: Vector2 = player.pos
+	# 朝向预看：镜头往人物面向的方向多留一点，走动时视野先到。
+	var lead: Vector2 = Vector2.ZERO
+	match int(player.dir):
+		0:
+			lead = Vector2(0, -CAM_LEAD)
+		1:
+			lead = Vector2(0, CAM_LEAD)
+		2:
+			lead = Vector2(CAM_LEAD, 0)
+		3:
+			lead = Vector2(-CAM_LEAD, 0)
+		4:
+			lead = Vector2(CAM_LEAD, -CAM_LEAD) * 0.7
+		5:
+			lead = Vector2(-CAM_LEAD, -CAM_LEAD) * 0.7
+		6:
+			lead = Vector2(CAM_LEAD, CAM_LEAD) * 0.7
+		7:
+			lead = Vector2(-CAM_LEAD, CAM_LEAD) * 0.7
+	target += lead
+	# 对话时镜头稍微下沉，人物从对话框上沿露出来，而不是被压在字下面。
+	if _dialog_open:
+		target.y += DIALOG_DOLLY
 	if bounds.size.x <= half.x * 2.0:
 		target.x = bounds.get_center().x
 	else:
@@ -486,7 +519,7 @@ func _update_camera(force: bool) -> void:
 	if force:
 		_cam_pos = target
 	else:
-		var damp: float = clampf(6.0 * get_process_delta_time(), 0.0, 1.0)
+		var damp: float = clampf(8.0 * get_process_delta_time(), 0.0, 1.0)
 		_cam_pos = _cam_pos.lerp(target, damp)
 	camera.position = _cam_pos
 
@@ -545,10 +578,17 @@ func _candidate_label(candidate: Dictionary) -> String:
 	return ""
 
 func _update_camera_text() -> void:
+	if _dialog_open or _present_layer_open() or chapter.visible:
+		_bubble.visible = false
+		if _bubble_bg != null:
+			_bubble_bg.visible = false
+		return
 	if _nearest_npc.is_empty() and _nearest_spot.is_empty() and _nearest_exit.is_empty():
 		_bubble.visible = false
 		if _bubble_bg != null:
 			_bubble_bg.visible = false
+		if _hint_label != null and _hint_band != null and _hint_band.visible:
+			_hint_label.visible = true
 		return
 	var caption: String = ""
 	match _primary_kind:
@@ -559,22 +599,19 @@ func _update_camera_text() -> void:
 		"exit":
 			caption = "E  " + str(_primary.get("label", ""))
 	if not _secondary_label.is_empty():
-		caption += "（旁边还有东西）"
-	var screen: Vector2 = get_viewport().get_canvas_transform() * player.pos
+		caption += "　·　旁边还有「" + _secondary_label + "」"
+	# R202：交互提示不再飘在人物头顶，而是接管底部提示带。
+	# 推近镜头后，世界气泡会压住角色与热点标签；固定提示带永远不吃画面。
 	_bubble.text = caption
-	var cache_key: String = caption + "|" + str(FONT_SIZE_HUD)
-	var caption_width: float
-	if _bubble_w_cache.has(cache_key):
-		caption_width = float(_bubble_w_cache[cache_key])
-	else:
-		caption_width = SKIN.font().get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_HUD).x + 26.0
-		_bubble_w_cache[cache_key] = caption_width
-	_bubble.position = Vector2(screen.x - 130.0, screen.y - 136.0)
-	_bubble.size = Vector2(260, 24)
+	_bubble.position = Vector2(24.0, 517.0)
+	_bubble.size = Vector2(580.0, 22.0)
+	_bubble.add_theme_color_override("font_color", SKIN.GOLD.lightened(0.22))
+	_bubble.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_bubble.visible = true
-	_bubble_bg.size = Vector2(caption_width, 24)
-	_bubble_bg.position = Vector2(screen.x - caption_width * 0.5, screen.y - 134.0)
-	_bubble_bg.visible = true
+	if _bubble_bg != null:
+		_bubble_bg.visible = false
+	if _hint_label != null:
+		_hint_label.visible = false
 
 # 按住 Shift / 空格：打字机 1.2 倍快进（R053）。
 func _type_fast_held() -> bool:

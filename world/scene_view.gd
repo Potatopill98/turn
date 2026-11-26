@@ -6,6 +6,7 @@ extends Node2D
 const SKIN = preload("res://ui/theme.gd")
 const TravelerArt = preload("res://traveler_art.gd")
 const PlayerState = preload("res://world/player_state.gd")
+const WorldData = preload("res://world/world_data.gd")
 
 var data: Dictionary = {}
 var player = null
@@ -82,6 +83,9 @@ func _draw() -> void:
 		return
 	var bounds: Rect2 = data.get("bounds", Rect2(0, 0, 960, 600)) as Rect2
 	_draw_background(bounds)
+	# 地面标记先画：热点圈与出口圈属于地面，应压在角色脚下而不是盖在身上。
+	_draw_spots()
+	_draw_exits()
 
 	var drawables: Array = []
 	for prop in data.get("props", []) as Array:
@@ -100,8 +104,6 @@ func _draw() -> void:
 		else:
 			_draw_player()
 
-	_draw_spots()
-	_draw_exits()
 	_draw_pulses()
 	if bool(data.get("dream", false)):
 		_draw_dream_veil(bounds)
@@ -169,7 +171,12 @@ func _draw_npc(npc: Dictionary) -> void:
 		art_key = name
 	var path: String = _npc_texture_path(art_key)
 	var tex: Texture2D = texture(path)
-	var height: float = float(data.get("npc_height", player.height))
+	var height: float = float(data.get("npc_height", 0.0))
+	var char_scale: float = float(data.get("char_scale", WorldData.CHAR_SCALE))
+	if height <= 0.0:
+		height = float(player.height)
+	else:
+		height = height * char_scale
 	if tex != null:
 		var region: Rect2 = _npc_rects.get(art_key, Rect2(210, 70, 320, 900)) as Rect2
 		var width: float = height * region.size.x / region.size.y
@@ -245,12 +252,6 @@ func _draw_spots() -> void:
 			draw_arc(at + Vector2(0, -10), 11.0 + 2.2 * breathe * sin(pulse_t * 2.0), 0.0, TAU, 16, Color(SKIN.GOLD, 0.32), 1.4)
 		draw_circle(at + Vector2(0, -10), ring_r, color)
 		draw_circle(at + Vector2(0, -10), 2.0, Color(SKIN.PAPER, 0.9))
-		if near_unused:
-			var label: String = str(s.get("label", ""))
-			var w: float = _text_w(label, 12)
-			draw_rect(Rect2(at.x - w / 2.0 - 6.0, at.y - 46.0, w + 12.0, 20.0), Color(SKIN.INK, 0.78))
-			draw_string(font, Vector2(at.x - w / 2.0, at.y - 31.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(SKIN.PAPER, 0.92))
-
 func _draw_exits() -> void:
 	for exit in data.get("exits", []) as Array:
 		var e: Dictionary = exit as Dictionary
@@ -261,11 +262,6 @@ func _draw_exits() -> void:
 		var ring: float = 14.0 + (2.0 * float(near) * sin(pulse_t * 1.7))
 		draw_arc(at + Vector2(0, -8), ring, 0.0, TAU, 16, color, 2.0)
 		draw_line(at + Vector2(-5, -8), at + Vector2(5, -8), color, 2.0)
-		if near:
-			var label: String = str(e.get("label", ""))
-			var w: float = _text_w(label, 12)
-			draw_rect(Rect2(at.x - w / 2.0 - 7.0, at.y - 56.0, w + 14.0, 20.0), Color(SKIN.INK, 0.86))
-			draw_string(font, Vector2(at.x - w / 2.0, at.y - 41.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, SKIN.GOLD)
 
 func _draw_dream_veil(bounds: Rect2) -> void:
 	var breath: float = 0.022 * sin(float(Time.get_ticks_msec()) * 0.0012)

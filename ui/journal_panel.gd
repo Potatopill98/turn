@@ -21,6 +21,8 @@ var _title_left: Label
 var _title_right: Label
 var _act_label: Label
 var _page_label: Label
+var _prev_button: Button = null
+var _next_button: Button = null
 var _selection: Dictionary = {"kind": "goal", "id": ""}
 var _item_page: int = 0
 var _tab: String = "goal"
@@ -116,21 +118,23 @@ func _build() -> void:
 	_items_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_items_box)
 
-	_page_label = SKIN.make_label("1 / 2", 13, SKIN.INK_SOFT)
-	_page_label.position = Vector2(820, 446)
-	_page_label.size.x = 90
+	_page_label = SKIN.make_label("1 / 2", 12, SKIN.INK_SOFT)
+	_page_label.position = Vector2(896, 66)
+	_page_label.size.x = 40
 	_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_root.add_child(_page_label)
 
-	var prev_button := SKIN.make_button("上一页", 12, 70.0, 26.0)
-	prev_button.position = Vector2(678, 442)
+	var prev_button := SKIN.make_button("上一页", 12, 70.0, 24.0)
+	prev_button.position = Vector2(752, 64)
 	prev_button.pressed.connect(_change_page.bind(-1))
 	_root.add_child(prev_button)
+	_prev_button = prev_button
 
-	var next_button := SKIN.make_button("下一页", 12, 70.0, 26.0)
-	next_button.position = Vector2(744, 442)
+	var next_button := SKIN.make_button("下一页", 12, 70.0, 24.0)
+	next_button.position = Vector2(826, 64)
 	next_button.pressed.connect(_change_page.bind(1))
 	_root.add_child(next_button)
+	_next_button = next_button
 
 	var detail_bg := ColorRect.new()
 	detail_bg.color = SKIN.INK
@@ -271,6 +275,12 @@ func _refresh() -> void:
 	var max_page: int = maxi(1, int(ceil(float(Data.item_entries().size()) / float(ITEMS_PER_PAGE))))
 	_item_page = clampi(_item_page, 0, max_page - 1)
 	_page_label.text = "%d / %d" % [_item_page + 1, max_page]
+	var legacy_mode: bool = _right_mode == "legacy"
+	_page_label.visible = legacy_mode
+	if _prev_button != null:
+		_prev_button.visible = legacy_mode
+	if _next_button != null:
+		_next_button.visible = legacy_mode
 
 func _build_people() -> void:
 	var index: int = 0
@@ -338,7 +348,7 @@ func _build_items() -> void:
 		var local: int = slot - start
 		var column: int = local % 4
 		var row: int = local / 4
-		var position := Vector2(492 + column * 104, 70 + row * 120)
+		var position := Vector2(492 + column * 104, 96 + row * 120)
 		var card := Button.new()
 		card.position = position
 		card.size = Vector2(96, 110)
@@ -558,7 +568,7 @@ func _build_tabs() -> void:
 		var tab: Dictionary = tabs[i] as Dictionary
 		var id: String = str(tab.get("id", ""))
 		var button := SKIN.make_button(str(tab.get("text", "")), 14, 88.0, 28.0)
-		button.position = Vector2(700, 468 + i * 30)
+		button.position = Vector2(700, 460 + i * 30)
 		if _tab == id:
 			button.add_theme_stylebox_override("normal", SKIN.style(SKIN.GOLD, SKIN.INK, 2, 4))
 			button.add_theme_color_override("font_color", SKIN.INK)

@@ -4,6 +4,8 @@ extends RefCounted
 # 全部用字符串路径 + 运行时 load，避免"图还没出"时 preload 直接编译失败。
 
 const ART: String = "res://art/"
+# 角色绘制高度倍率：让主角/镇民在 960×600 的取景里不再像火柴人。
+const CHAR_SCALE: float = 1.8
 
 static func all() -> Dictionary:
 	var d: Dictionary = {}
@@ -117,6 +119,8 @@ static func all() -> Dictionary:
 		"title": "小镇",
 		"subtitle": "整条镇子 · 可自由走",
 		"player_height": 76.0,
+		# 等距总图是按"一栋楼 ≈ 100px"画的，人只能给到 40px 上下，否则比房子还高。
+		"char_scale": 0.55,
 		"bg": ART + "00_场景/14_小镇总图_等距.png",
 		"sky": Color("#d9d2bd"),
 		"ground": Color("#9a9482"),
@@ -296,6 +300,8 @@ static func all() -> Dictionary:
 		"sky": Color("#c8c8bc"),
 		"ground": Color("#8b8778"),
 		"player_height": 84.0,
+		# 这张图里的人已经是画上去的，主角一旦放大就会比背景里的孩子高一倍，按 1.05 对齐。
+		"char_scale": 1.05,
 		"bounds": Rect2(0, 0, 960, 600),
 		"walk": [Rect2(70, 330, 820, 210)],
 		"blocks": [],
@@ -328,6 +334,8 @@ static func all() -> Dictionary:
 		"sky": Color("#20242c"),
 		"ground": Color("#474a46"),
 		"player_height": 84.0,
+		# 终章图里有一排画好的镇民，主角高度跟他们对齐，别做成巨人。
+		"char_scale": 1.05,
 		"bounds": Rect2(0, 0, 960, 600),
 		"walk": [Rect2(80, 330, 800, 200)],
 		"blocks": [],
