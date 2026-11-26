@@ -60,7 +60,7 @@ func can_stand(at: Vector2, data: Dictionary) -> bool:
 func step(delta: float, motion: Vector2, data: Dictionary) -> void:
 	var input: Vector2 = motion.limit_length()
 	dir = TravelerArt.facing(input, dir)
-	if input.length_squared() > 1.0:
+	if input.length_squared() > 0.0001:
 		walk_dir = input
 		_glide = input * SPEED
 		walking = true

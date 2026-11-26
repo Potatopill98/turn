@@ -42,6 +42,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 
 	_static_checks()
+	_move_checks()
 	_reachability_checks()
 	_cross_scene_reachability()
 	_lock_coverage_checks()
@@ -66,6 +67,35 @@ func _ready() -> void:
 func _fail(message: String) -> void:
 	failures.append(message)
 	print("  FAIL  ", message)
+
+# R201：单键行走能不能真的位移。
+# 之前的随机走位只断言"没走出可行走区"，原地不动也能全绿；
+# B4 把阈值写成 input.length_squared() > 1.0，单键输入长度恰好 1.0 被判定为无输入，玩家彻底走不动。
+func _move_checks() -> void:
+	var scenes: Dictionary = WorldData.all()
+	var dead: Array[String] = []
+	for id in scenes.keys():
+		var scene_id: String = str(id)
+		var data: Dictionary = scenes[id] as Dictionary
+		var probe: PlayerState = PlayerState.new()
+		var moved_max: float = 0.0
+		var dirs: Array = [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]
+		for item in dirs:
+			var motion: Vector2 = item as Vector2
+			probe.reset(data.get("spawn", Vector2.ZERO) as Vector2, 1)
+			var from: Vector2 = probe.pos
+			var frames: int = 0
+			while frames < 60:
+				probe.step(1.0 / 60.0, motion, data)
+				frames += 1
+			moved_max = maxf(moved_max, probe.pos.distance_to(from))
+		if moved_max < 20.0:
+			dead.append(scene_id)
+	if dead.is_empty():
+		_ok()
+		print("  19 场景单键行走均有位移")
+	else:
+		_fail("单键行走卡死：%s" % ", ".join(dead))
 
 func _ok() -> void:
 	checks += 1
