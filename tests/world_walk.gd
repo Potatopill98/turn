@@ -898,6 +898,7 @@ func _combo_bench_checks() -> void:
 		["ev_list", "ev_tape", "cl_tape"],
 		["ev_draft", "ev_letter", "cl_leave"],
 		["ev_shoes", "ev_ticket", "cl_return"],
+		["ev_draft", "ev_tag", "cl_factory"],
 	]
 	var recipe_ok: int = 0
 	for r in recipes:
@@ -910,7 +911,7 @@ func _combo_bench_checks() -> void:
 			_fail("正解 %s+%s 应推出 %s，实际：%s" % [str(r[0]), str(r[1]), str(r[2]), str(result)])
 	if recipe_ok == recipes.size():
 		_ok()
-		print("  5 条配方全部正解出推论  OK")
+		print("  %d 条配方全部正解出推论  OK" % recipes.size())
 	else:
 		_fail("正解断言通过 %d / %d" % [recipe_ok, recipes.size()])
 
@@ -960,35 +961,43 @@ func _present_flow_checks() -> void:
 	if npc.is_empty():
 		_fail("夜场找不到 p_zhou")
 		return
-	world._say_npc(npc)
-	if world._present_layer_open():
-		_fail("空手时不应打开出示选择层")
-	else:
-		_ok()
-		print("  空手走交谈台词，不开选择层  OK")
-	world._advance_dialog()
-
-	world.puzzle.add_evidence("ev_letter")
+	# R183：周德海接入 A2 选择面板；面板可达、非干扰卡 ≥2，对 / 错两路都有。
+	if str(npc.get("present_act", "")) != "A2":
+		_fail("p_zhou 未接 present_act=A2")
 	world._say_npc(npc)
 	if not world._present_layer_open():
-		_fail("持有物证时应打开出示选择层")
+		_fail("与周德海交谈应打开 A2 出示面板")
+		return
+	_ok()
+	print("  A2 面板从夜场周德海打开  OK")
+	var panel: CanvasLayer = world._evidence_panel
+	var items: Array = panel._items
+	var non_decoy: int = 0
+	for item in items:
+		if str((item as Dictionary).get("stance", "")) != "decoy":
+			non_decoy += 1
+	if items.size() >= 4 and non_decoy >= 2:
+		_ok()
+		print("  A2 卡 %d 张、非干扰 %d 张（≥2）  OK" % [items.size(), non_decoy])
+	else:
+		_fail("A2 可达卡不足：%d 张、非干扰 %d" % [items.size(), non_decoy])
+	# 错路：干扰牌 e_fence，不发奖励、不登记已出示。
+	panel._select_card(3)
+	panel._confirm()
+	panel._finish_reaction()
+	if world.puzzle.has_evidence("ev_mirror") or TurnState.has_flag("presented_p_zhou"):
+		_fail("错解干扰牌不应发镜子、不应登记已出示")
 	else:
 		_ok()
-		print("  持有物证打开选择层  OK")
-	world._present_pick("ev_letter")
-	if world.puzzle.has_evidence("ev_letter") and not world.puzzle.has_evidence("ev_mirror") and world._dialog_open:
-		_ok()
-		print("  错配拒绝：物证仍在、不出镜子、给台词  OK")
-	else:
-		_fail("错配后物证被消耗或误发奖励")
-	world._advance_dialog()
-
+		print("  错解牌 e_fence：物证不发、立场不落盘  OK")
+	# 正路：e_shoes 卡走完，发 ev_mirror 并登记已出示。
 	world.puzzle.add_evidence("ev_shoes")
-	world._say_npc(npc)
-	world._present_pick("ev_shoes")
+	panel._select_card(2)
+	panel._confirm()
+	panel._finish_reaction()
 	if world.puzzle.has_evidence("ev_mirror") and TurnState.has_flag("presented_p_zhou"):
 		_ok()
-		print("  正解出示：得到 ev_mirror 并登记已出示  OK")
+		print("  正解 e_shoes：得到 ev_mirror 并登记已出示  OK")
 	else:
 		_fail("正解出示应得到 ev_mirror")
 
@@ -1010,7 +1019,7 @@ func _ending_tier_checks() -> void:
 	else:
 		_fail("中收集度应判 half，实际 " + half)
 	TurnState.reset()
-	var clear: String = TurnState.settle_collection_tier(10, 5)
+	var clear: String = TurnState.settle_collection_tier(PuzzleState.EVIDENCE_NAMES.size(), PuzzleState.CLUE_NAMES.size())
 	if clear == "clear":
 		_ok()
 		print("  全收集 → clear 档  OK")
@@ -1176,6 +1185,16 @@ func _b7_delivery_checks() -> void:
 	else:
 		_fail("NPC 出示接线缺失：小满 act=%s，唐棠 act=%s" % [str(xiaoman.get("present_act", "")), str(tang.get("present_act", ""))])
 
+	# R183：A2 面板从周德海接入，夜场 / 白天各一条可达路径。
+	var playground_night: Dictionary = WorldData.all()["playground_night"] as Dictionary
+	var zhou_day: Dictionary = _npc_by_id(town_road.get("npcs", []) as Array, "p_zhou")
+	var zhou_night: Dictionary = _npc_by_id(playground_night.get("npcs", []) as Array, "p_zhou")
+	if str(zhou_day.get("present_act", "")) == "A2" and str(zhou_night.get("present_act", "")) == "A2":
+		_ok()
+		print("  周德海 A2 接线到位（白天老街 / 夜场游乐场）  OK")
+	else:
+		_fail("周德海 A2 接线缺失：白天 act=%s，夜场 act=%s" % [str(zhou_day.get("present_act", "")), str(zhou_night.get("present_act", ""))])
+
 	TurnState.set_stance("A1", "half")
 	var stance_snap: String = TurnState.snapshot()
 	TurnState.reset()
@@ -1204,6 +1223,7 @@ func _b7_delivery_checks() -> void:
 	var evidence_raw: String = FileAccess.get_file_as_string("res://data/evidence.json")
 	var story_raw: String = FileAccess.get_file_as_string("res://data/story.json")
 	var journal_raw: String = FileAccess.get_file_as_string("res://data/journal.json")
+	var legacy_raw: String = FileAccess.get_file_as_string("res://later_chapters.gd")
 	var text_checks: Array = [
 		[evidence_raw, "九点", "磁带时间已统一为九点"],
 		[evidence_raw, "老地方", "磁带地点已统一为老地方"],
@@ -1211,6 +1231,8 @@ func _b7_delivery_checks() -> void:
 		[evidence_raw, "一天一行", "记录本数字口径对齐"],
 		[story_raw, "你孩子吧", "辈分疑问已改对"],
 		[journal_raw, "修理店", "档案标签修理店口径"],
+		[legacy_raw, "她孙子说", "legacy 辈分统一为孙子"],
+		[legacy_raw, "九点，老地方", "legacy 时间地点统一为九点·老地方"],
 	]
 	for check in text_checks:
 		if str(check[0]).contains(str(check[1])):
@@ -1219,7 +1241,7 @@ func _b7_delivery_checks() -> void:
 		else:
 			_fail("文案未命中：" + str(check[2]))
 	for bad in ["两点，桥下", "你儿子吧", "七个日期"]:
-		if evidence_raw.contains(bad) or story_raw.contains(bad) or journal_raw.contains(bad):
+		if evidence_raw.contains(bad) or story_raw.contains(bad) or journal_raw.contains(bad) or legacy_raw.contains(bad):
 			_fail("残留矛盾文案：" + bad)
 		else:
 			_ok()
@@ -1318,7 +1340,7 @@ func _b8_delivery_checks() -> void:
 	var soft_tier: String = TurnState.settle_collection_tier(world.puzzle.all_evidence().size(), world.puzzle.all_clues().size())
 	if soft_tier == "soft":
 		_ok()
-		print("  玩法路径 2 物证 → soft 档（%d/10 物证）  OK" % world.puzzle.all_evidence().size())
+		print("  玩法路径 2 物证 → soft 档（%d/%d 物证）  OK" % [world.puzzle.all_evidence().size(), PuzzleState.EVIDENCE_NAMES.size()])
 	else:
 		_fail("R156 2 物证应判 soft，实际 " + soft_tier)
 	TurnState.reset()
@@ -1328,7 +1350,7 @@ func _b8_delivery_checks() -> void:
 	var half_tier: String = TurnState.settle_collection_tier(world.puzzle.all_evidence().size(), world.puzzle.all_clues().size())
 	if half_tier == "half":
 		_ok()
-		print("  玩法路径 5 物证 → half 档（%d/10 物证）  OK" % world.puzzle.all_evidence().size())
+		print("  玩法路径 5 物证 → half 档（%d/%d 物证）  OK" % [world.puzzle.all_evidence().size(), PuzzleState.EVIDENCE_NAMES.size()])
 	else:
 		_fail("R156 5 物证应判 half，实际 " + half_tier)
 
@@ -1337,7 +1359,7 @@ func _b8_delivery_checks() -> void:
 	world.puzzle.reload()
 	world.puzzle.add_evidence("ev_letter")
 	world._open_ending_panel("clear")
-	if str(world._ending_title.text).contains("全说开") and str(world._ending_summary.text).contains("/5") and not str(world._ending_missing.text).is_empty():
+	if str(world._ending_title.text).contains("全说开") and str(world._ending_summary.text).contains("/6") and str(world._ending_summary.text).contains("/11") and not str(world._ending_missing.text).is_empty():
 		_ok()
 		print("  结局结算页：标题/计数/缺失名齐备  OK")
 	else:

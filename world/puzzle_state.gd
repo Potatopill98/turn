@@ -19,6 +19,7 @@ const EVIDENCE_NAMES: Dictionary = {
 	"ev_mirror": "裂了两道缝的破镜子",
 	"ev_draft": "抽屉里的草稿",
 	"ev_ticket": "没寄出去的站台票根",
+	"ev_tag": "磨白的工装袖标",
 }
 
 # 每件物证的出口去向（锁 / 组合 / 出示），手记分区里标注用。
@@ -31,8 +32,9 @@ const EVIDENCE_USAGE: Dictionary = {
 	"ev_list": "组合：和旧磁带并排对上",
 	"ev_tape": "组合：和搬家清单对上",
 	"ev_mirror": "开锁：带着旧镜，才看得清入夜秋千的路",
-	"ev_draft": "组合：和合同残角并排对上",
+	"ev_draft": "组合：和合同残角并排对上；组合：和工装袖标对上",
 	"ev_ticket": "组合：和旧鞋并排对上",
+	"ev_tag": "组合：和草稿并排对上",
 }
 
 # 组合推论登记（id -> 名称 / 文本）。
@@ -42,6 +44,7 @@ const CLUE_NAMES: Dictionary = {
 	"cl_tape": "那句道别一直没寄出去",
 	"cl_leave": "纸上的地址还是回镇上",
 	"cl_return": "她一直留在原地等我回来",
+	"cl_factory": "袖口磨白那年，草稿还没写完",
 }
 
 const CLUE_TEXTS: Dictionary = {
@@ -50,6 +53,7 @@ const CLUE_TEXTS: Dictionary = {
 	"cl_tape": "清单最后一改了三回，磁带里的人声却停在 00:18——有人把道别录好了，一直没寄出去。",
 	"cl_leave": "合同残角上的地址，和草稿页边记的是同一个地方：绕了一整年，要去的还是回镇上那条路。",
 	"cl_return": "站台票根挨着灯下那双没穿走的旧鞋：一个走得急，一个留下来等，两个人都没走出这条街。",
+	"cl_factory": "工装袖标袖口磨白的折痕，和草稿页边那行没写完的地址是同一段日子：人站在流水线前，心里早就在想回去的路。",
 }
 
 # 配方：无序两件物证 -> 推论。key 按字母序拼接 "a|b"。
@@ -59,6 +63,7 @@ const COMBOS: Dictionary = {
 	"ev_list|ev_tape": "cl_tape",
 	"ev_draft|ev_letter": "cl_leave",
 	"ev_shoes|ev_ticket": "cl_return",
+	"ev_draft|ev_tag": "cl_factory",
 }
 
 # 推论出口去向（锁 / examine / 终章回顾），详情页标注用。
@@ -68,6 +73,7 @@ const CLUE_USAGE: Dictionary = {
 	"cl_tape": "对照：路口旧磁带机",
 	"cl_leave": "对照：厂房工装名牌",
 	"cl_return": "对照：车站站台裂缝",
+	"cl_factory": "对照：更衣室铁柜",
 }
 
 const FLAG_EVIDENCE: String = "pz_evidence"

@@ -20,6 +20,12 @@ const NPC_RADIUS: float = 84.0
 const EXIT_RADIUS: float = 76.0
 const SAVE_FILE: String = "user://turn_world.cfg"
 
+# 出示面板卡 id -> 世界层物证 id：A2 正确卡走完后，走原 present 奖励链。
+const PANEL_CARD_TO_EVIDENCE: Dictionary = {
+	"e_shoes": "ev_shoes",
+	"e_screw": "ev_screw",
+}
+
 # 场景所属幕：进场景时按幕切换提示层（R078）。
 const ACT_BY_SCENE: Dictionary = {
 	"langcheng_room": "prologue",
@@ -688,6 +694,14 @@ func _open_evidence_panel(npc: Dictionary, act: String) -> void:
 
 func _on_evidence_result(stance: String, item_id: String, npc: Dictionary) -> void:
 	var person: String = str(npc.get("id", ""))
+	var present: Dictionary = npc.get("present", {}) as Dictionary
+	var grant: String = str(present.get("grants_evidence", ""))
+	if not grant.is_empty():
+		var card_ev: String = str(PANEL_CARD_TO_EVIDENCE.get(item_id, ""))
+		if card_ev == str(present.get("evidence", "")) and puzzle.add_evidence(grant):
+			_play_pickup(npc.get("pos", Vector2.ZERO) as Vector2, puzzle.evidence_name(grant))
+			toast("出示物证 · 得到 " + puzzle.evidence_name(grant))
+	_save_position()
 	if not person.is_empty():
 		TurnState.set_flag("presented_" + person, true)
 		TurnState.unlock_person(person, true)
@@ -747,7 +761,7 @@ func _open_ending_panel(tier: String) -> void:
 	_ending_body.text = str(ending.get("body", ""))
 	var held_ev: Array[String] = puzzle.all_evidence()
 	var held_cl: Array[String] = puzzle.all_clues()
-	_ending_summary.text = "已解开 推论 %d/5 · 物证 %d/10" % [held_cl.size(), held_ev.size()]
+	_ending_summary.text = "已解开 推论 %d/%d · 物证 %d/%d" % [held_cl.size(), PuzzleState.CLUE_NAMES.size(), held_ev.size(), PuzzleState.EVIDENCE_NAMES.size()]
 	var missing_ev: Array[String] = []
 	for eid in PuzzleState.EVIDENCE_NAMES.keys():
 		if not held_ev.has(str(eid)):

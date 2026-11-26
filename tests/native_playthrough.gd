@@ -21,6 +21,9 @@ var plan: Array = [
 	{"kind": "spot", "label": "抽屉里的草稿", "expect": "langcheng_office"},
 	{"kind": "combo", "pair": "ev_letter|ev_draft", "expect": "langcheng_office"},
 	{"kind": "exit", "label": "下楼 · 去厂里", "expect": "langcheng_factory"},
+	{"kind": "spot", "label": "挂着的工装", "expect": "langcheng_factory"},
+	{"kind": "combo", "pair": "ev_draft|ev_tag", "expect": "langcheng_factory"},
+	{"kind": "spot", "label": "更衣室铁柜", "expect": "langcheng_factory"},
 	{"kind": "spot", "label": "工装名牌", "expect": "langcheng_factory"},
 	{"kind": "exit", "label": "沿楼梯回工位", "expect": "langcheng_office"},
 	{"kind": "exit", "label": "沿楼梯回出租屋", "expect": "langcheng_room"},
@@ -134,9 +137,9 @@ func _ready() -> void:
 	var tier: String = TurnState.settle_collection_tier(ev_n, cl_n)
 	_log("---- 演练结束 ----")
 	_log("总步数：%d，卡住/失败：%d" % [plan.size(), stuck_count])
-	_log("物证：%d/10，推论：%d/5，结局档位：%s" % [ev_n, cl_n, tier])
+	_log("物证：%d/%d，推论：%d/%d，结局档位：%s" % [ev_n, world.puzzle.EVIDENCE_NAMES.size(), cl_n, world.puzzle.CLUE_NAMES.size(), tier])
 
-	var passed: bool = stuck_count == 0 and ev_n == 10 and cl_n == 5 and tier == "clear"
+	var passed: bool = stuck_count == 0 and ev_n == world.puzzle.EVIDENCE_NAMES.size() and cl_n == world.puzzle.CLUE_NAMES.size() and tier == "clear"
 	_finish("原生通关 " + ("通过：0 卡点 / clear 档" if passed else "未通过：stuck=%d ev=%d cl=%d tier=%s" % [stuck_count, ev_n, cl_n, tier]), 0 if passed else 1)
 
 func _wait_free() -> void:
@@ -196,11 +199,33 @@ func _do_npc(name: String, ev: String) -> bool:
 		return false
 	world._say_npc(npc)
 	await get_tree().process_frame
+	if world._evidence_panel != null and world._evidence_panel.is_open():
+		var card_index: int = _panel_card_index(ev)
+		if card_index < 0:
+			return false
+		world._evidence_panel._select_card(card_index)
+		world._evidence_panel._confirm()
+		await get_tree().process_frame
+		world._evidence_panel._finish_reaction()
+		await get_tree().process_frame
+		_settle_dialog()
+		return world.puzzle.has_evidence(ev) or not world._evidence_panel.is_open()
 	if world._present_layer_open():
 		world._present_pick(ev)
 		await get_tree().process_frame
 	_settle_dialog()
 	return world.puzzle.has_evidence(ev) or world._present_layer == null or not world._present_layer_open()
+
+# 世界层物证 id -> 出示面板卡 id（ev_shoes ↔ e_shoes 等），返回面板下标。
+func _panel_card_index(ev: String) -> int:
+	if world._evidence_panel == null:
+		return -1
+	var card_id: String = "e_" + ev.trim_prefix("ev_")
+	var items: Array = world._evidence_panel._items
+	for i in items.size():
+		if str((items[i] as Dictionary).get("id", "")) == card_id:
+			return i
+	return -1
 
 func _find_spot(label: String) -> Dictionary:
 	for spot in world.data.get("spots", []) as Array:

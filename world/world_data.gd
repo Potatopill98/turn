@@ -76,9 +76,11 @@ static func all() -> Dictionary:
 		"npcs": [],
 		"spots": [
 			{"pos": Vector2(620, 480), "label": "流水线", "kind": "talk", "arg": "一罐接一罐，从眼前过去，望不到头。每一罐都一模一样，连标签贴歪的角度都一样。"},
-			{"pos": Vector2(700, 380), "label": "挂着的工装", "kind": "talk", "arg": "蓝工装挂在钩上，袖口磨白了。名字牌是我自己贴的，写歪了，一直没换。"},
+			{"pos": Vector2(700, 380), "label": "挂着的工装", "kind": "item", "gives_evidence": "ev_tag", "arg2": "蓝工装挂在钩上，袖口磨白了。名字牌是我自己贴的，写歪了，一直没换。"},
 			{"pos": Vector2(880, 520), "label": "水洼里的倒影", "kind": "talk", "arg": "灯在水里晃。人走过去，影子就散了。"},
 			{"pos": Vector2(700, 460), "label": "工装名牌", "kind": "examine", "lock": {"clues": ["cl_leave"], "hint": "先在出租屋桌上取合同残角、工位抽屉取草稿，到手记里对照出回镇的那条路。"}, "arg": "名牌背面用铅笔补过一行：回镇上老宅看看。", "arg2": "和草稿上的地址对上了——从一开始这条路就指着家。"},
+			{"pos": Vector2(770, 420), "label": "把袖标和草稿并排看", "kind": "combo", "combo": {"a": "ev_tag", "b": "ev_draft", "clue": "cl_factory"}, "arg": "磨白的袖口，和草稿页边那行没写完的地址，能对上什么？打开手记，把两件物证放进槽里对照。"},
+			{"pos": Vector2(830, 470), "label": "更衣室铁柜", "kind": "examine", "lock": {"clues": ["cl_factory"], "hint": "先把工装袖标和草稿并排对照，想清楚流水线那年留下的是什么。"}, "arg": "铁柜半开着，里面只有一件叠好的工装。", "arg2": "柜门上钉着一张草稿的抄件——人没走的时候，回去的路就已经写在这儿了。"},
 		],
 		"exits": [
 			{"pos": Vector2(860, 545), "to": "town_final", "label": "请假 · 回镇上", "spawn": "bus", "lock": {"clues": ["cl_lamp"], "hint": "想通路灯那件事之前，先别急着去终章灯火。"}},
@@ -141,7 +143,7 @@ static func all() -> Dictionary:
 		"npcs": [
 			{"name": "街坊", "pos": Vector2(700, 630), "id": "", "needs_evidence": "ev_letter", "line": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。", "line2": "你妈今早去镇口了。她说你要是回来，先去老宅看看，别急着找她。", "lines_without": "回来啦？你妈天天念叨。老街这几个月热闹，路灯修了一半。", "lines_with_evidence": "合同上那个地址我认得。你妈走之前也提过一回——先去老宅看看，别急着找她。"},
 			{"name": "陈小满", "pos": Vector2(560, 600), "id": "p_xiaoman", "present_act": "A1", "line": "你怎么还没走？", "line2": "谱子我收好了。别的，没什么好说的。"},
-			{"name": "周德海", "pos": Vector2(340, 690), "id": "p_zhou", "needs_evidence": "ev_screw", "line": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "line2": "你小时候天天在这条街上跑。那时候路灯坏一盏，整条街都黑，没人修。", "lines_without": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "lines_with_evidence": "螺丝你都摸到了？这架子我修了三回。真正没人带走的，是灯下那双鞋。"},
+			{"name": "周德海", "pos": Vector2(340, 690), "id": "p_zhou", "present_act": "A2", "needs_evidence": "ev_screw", "line": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "line2": "你小时候天天在这条街上跑。那时候路灯坏一盏，整条街都黑，没人修。", "lines_without": "灯又灭了两盏。我这把老骨头，爬不动梯子喽。", "lines_with_evidence": "螺丝你都摸到了？这架子我修了三回。真正没人带走的，是灯下那双鞋。"},
 		],
 		"spots": [
 			{"pos": Vector2(360, 440), "label": "老宅的门", "kind": "travel", "arg": "old_house_yard"},
@@ -272,7 +274,7 @@ static func all() -> Dictionary:
 		"spawns": {"day": Vector2(300, 545), "night": Vector2(300, 545)},
 		"props": [],
 		"npcs": [
-			{"name": "周德海", "pos": Vector2(520, 540), "id": "p_zhou", "needs_evidence": "ev_shoes", "line": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "line2": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "line3": "囡囡以前每晚都在这秋千上坐着。她不说，我知道她在等谁。", "lines_without": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "lines_with_evidence": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "present": {"evidence": "ev_shoes", "reply": "你把那双旧鞋提过来。他低头擦了擦鞋面的灰，把墙角那面裂了两道缝的破镜子塞给我：「夜里路灯底下，照得见回去的路。」", "grants_evidence": "ev_mirror", "wrong_lines": ["他接过东西翻来覆去看了两眼，又递回给我——像压根没听过这名字。", "他摇了摇头：这玩意儿跟秋千对不上号，你再想想。"]}},
+			{"name": "周德海", "pos": Vector2(520, 540), "id": "p_zhou", "present_act": "A2", "needs_evidence": "ev_shoes", "line": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "line2": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "line3": "囡囡以前每晚都在这秋千上坐着。她不说，我知道她在等谁。", "lines_without": "这么晚还出来走？灯我修了一半，剩下那半，得有人接着修。", "lines_with_evidence": "这架秋千我修过三回。每回修完都想，下次总该有人来坐了。", "present": {"evidence": "ev_shoes", "reply": "你把那双旧鞋提过来。他低头擦了擦鞋面的灰，把墙角那面裂了两道缝的破镜子塞给我：「夜里路灯底下，照得见回去的路。」", "grants_evidence": "ev_mirror", "wrong_lines": ["他接过东西翻来覆去看了两眼，又递回给我——像压根没听过这名字。", "他摇了摇头：这玩意儿跟秋千对不上号，你再想想。"]}},
 		],
 		"spots": [
 			{"pos": Vector2(700, 470), "label": "路灯", "kind": "item", "arg": "e_lamp"},

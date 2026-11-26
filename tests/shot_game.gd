@@ -90,7 +90,7 @@ func _shot_later() -> void:
 	await _shot("turn_night.png")
 	later.show_page("rewind")
 	later.tape_position = 18
-	later.note = "留言：“阿棠，明天下午两点，桥下等。”"
+	later.note = "留言：“阿棠，明天九点，老地方见。”"
 	await _wait(0.4)
 	await _shot("turn_tape.png")
 	TurnState.start_act("A1")
