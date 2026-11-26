@@ -4,7 +4,7 @@ extends Node
 # 不参与正式流程，交付前可删。
 
 const EvidencePanel = preload("res://ui/evidence_panel.gd")
-const OUT_DIR := "C:/Users/45803/AppData/Local/Temp/"
+const OUT_DIR: String = "C:/Users/45803/AppData/Local/Temp/"
 
 func _ready() -> void:
 	await get_tree().process_frame
