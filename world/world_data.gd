@@ -56,6 +56,7 @@ static func all() -> Dictionary:
 		],
 		"exits": [
 			{"pos": Vector2(480, 520), "to": "langcheng_factory", "label": "下楼 · 去厂里", "spawn": "door"},
+			{"pos": Vector2(300, 500), "to": "langcheng_room", "label": "沿楼梯回出租屋", "spawn": "door", "open_edge": true, "open_reason": "从工位返回已进过的出租屋，属于返程边，不受新条件门控"},
 		],
 	}
 

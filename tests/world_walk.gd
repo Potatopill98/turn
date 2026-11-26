@@ -59,6 +59,7 @@ func _ready() -> void:
 	await _title_checks()
 	_b6_delivery_checks()
 	_b7_delivery_checks()
+	await _b8_delivery_checks()
 	_random_rounds()
 	_report()
 
@@ -1235,6 +1236,113 @@ func _npc_by_id(npcs: Array, person_id: String) -> Dictionary:
 		if str(entry.get("id", "")) == person_id:
 			return entry
 	return {}
+
+func _b8_delivery_checks() -> void:
+	print("== B8 交付项断言（R152/R153/R154/R156/R159/R162）==")
+	# R152 单一数据源：手记侧实例合成推论后，世界侧实例不 reload 直读 flags 必须为 true。
+	TurnState.reset()
+	world.puzzle.reload()
+	var world_p: PuzzleState = world.puzzle
+	var journal_p: PuzzleState = PuzzleState.new()
+	world_p.add_evidence("ev_note")
+	world_p.add_evidence("ev_photo")
+	var attempt: Dictionary = journal_p.combine_attempt("ev_note", "ev_photo")
+	if bool(attempt.get("ok", false)) and world_p.has_clue("cl_score"):
+		_ok()
+		print("  双实例同读 flags：手记侧合成后世界侧直读 cl_score=true，未 reload  OK")
+	else:
+		_fail("R152 双实例分叉：attempt=%s world_p.has_clue(cl_score)=%s" % [str(attempt), str(world_p.has_clue("cl_score"))])
+
+	# R154 就近优先：夜场站在旧鞋热点上，主目标是鞋（物证），不是周德海对话。
+	world.force_scene("playground_night")
+	await get_tree().process_frame
+	world.player.pos = Vector2(560.0, 500.0)
+	world._update_nearby()
+	if world._primary_kind == "spot" and str(world._primary.get("gives_evidence", "")) == "ev_shoes":
+		_ok()
+		print("  夜场鞋点按 E 主目标=ev_shoes（NPC 周德海未截胡）  OK")
+	else:
+		_fail("R154 夜场鞋点被截胡：kind=%s evidence=%s" % [world._primary_kind, str(world._primary.get("gives_evidence", ""))])
+	# 路口清单点同样优先于吴长庚。
+	world.force_scene("street_cross")
+	await get_tree().process_frame
+	world.player.pos = Vector2(430.0, 400.0)
+	world._update_nearby()
+	if world._primary_kind == "spot" and str(world._primary.get("gives_evidence", "")) == "ev_list":
+		_ok()
+		print("  路口清单点按 E 主目标=ev_list（NPC 吴长庚未截胡）  OK")
+	else:
+		_fail("R154 路口清单被截胡：kind=%s evidence=%s" % [world._primary_kind, str(world._primary.get("gives_evidence", ""))])
+
+	# R153 序章返程边：office → room 为 open_edge 返程，不再单向关死。
+	var office: Dictionary = WorldData.all()["langcheng_office"]
+	var back_edge: Dictionary = {}
+	for edge in office.get("exits", []) as Array:
+		if str(edge.get("to", "")) == "langcheng_room":
+			back_edge = edge
+	if not back_edge.is_empty() and bool(back_edge.get("open_edge", false)):
+		_ok()
+		print("  工位→出租屋返程边在位（open_edge）  OK")
+	else:
+		_fail("R153 缺少 office→room 返程边：" + str(back_edge))
+
+	# R162 由出口进入梦境时记录来源场景，醒转回到来源而非兜底堂屋。
+	world.force_scene("playground_night")
+	await get_tree().process_frame
+	world._return_scene = ""
+	world.travel("dream_swing")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if world._return_scene == "playground_night":
+		_ok()
+		print("  出口入梦醒转来源已记录：_return_scene=playground_night  OK")
+	else:
+		_fail("R162 梦醒回落来源丢失：_return_scene=%s" % world._return_scene)
+	# 醒转兜底：回到来源夜场，而不是 house_hall。
+	world._wake()
+	for i in range(60):
+		await get_tree().create_timer(0.03).timeout
+		if world.scene_id == "playground_night":
+			break
+	if world.scene_id == "playground_night":
+		_ok()
+		print("  秋千梦醒落回 playground_night（未兜底 house_hall）  OK")
+	else:
+		_fail("R162 梦醒落点错误：" + world.scene_id)
+
+	# R156 正常玩法路径分档：只经 add_evidence 喂物证，再算档（不直接调 settle 传数字）。
+	TurnState.reset()
+	world.puzzle.reload()
+	for soft_id in ["ev_letter", "ev_note"]:
+		world.puzzle.add_evidence(str(soft_id))
+	var soft_tier: String = TurnState.settle_collection_tier(world.puzzle.all_evidence().size(), world.puzzle.all_clues().size())
+	if soft_tier == "soft":
+		_ok()
+		print("  玩法路径 2 物证 → soft 档（%d/10 物证）  OK" % world.puzzle.all_evidence().size())
+	else:
+		_fail("R156 2 物证应判 soft，实际 " + soft_tier)
+	TurnState.reset()
+	world.puzzle.reload()
+	for half_id in ["ev_letter", "ev_note", "ev_photo", "ev_screw", "ev_shoes"]:
+		world.puzzle.add_evidence(str(half_id))
+	var half_tier: String = TurnState.settle_collection_tier(world.puzzle.all_evidence().size(), world.puzzle.all_clues().size())
+	if half_tier == "half":
+		_ok()
+		print("  玩法路径 5 物证 → half 档（%d/10 物证）  OK" % world.puzzle.all_evidence().size())
+	else:
+		_fail("R156 5 物证应判 half，实际 " + half_tier)
+
+	# R159 结算面板：clear 档标题/计数/缺失名齐备，带回标题入口。
+	TurnState.reset()
+	world.puzzle.reload()
+	world.puzzle.add_evidence("ev_letter")
+	world._open_ending_panel("clear")
+	if str(world._ending_title.text).contains("全说开") and str(world._ending_summary.text).contains("/5") and not str(world._ending_missing.text).is_empty():
+		_ok()
+		print("  结局结算页：标题/计数/缺失名齐备  OK")
+	else:
+		_fail("R159 结算面板要素缺失：title=%s summary=%s missing=%s" % [str(world._ending_title.text), str(world._ending_summary.text), str(world._ending_missing.text)])
+	world._close_ending_panel()
 
 func _report() -> void:
 	print("")

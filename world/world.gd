@@ -106,6 +106,9 @@ var _return_spawn: String = ""
 var _nearest_spot: Dictionary = {}
 var _nearest_npc: Dictionary = {}
 var _nearest_exit: Dictionary = {}
+var _primary: Dictionary = {}
+var _primary_kind: String = ""
+var _secondary_label: String = ""
 var _used: Dictionary = {}
 var _talked: Dictionary = {}
 var _talk_count: Dictionary = {}
@@ -126,6 +129,11 @@ var _present_wrong_count: Dictionary = {}
 var _refusal_count: Dictionary = {}
 var _evidence_panel: CanvasLayer = null
 var _sfx: Dictionary = {}
+var _ending_layer: CanvasLayer = null
+var _ending_title: Label = null
+var _ending_body: Label = null
+var _ending_summary: Label = null
+var _ending_missing: Label = null
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -378,6 +386,11 @@ func travel(to: String, spawn_name: String = "", anim: String = "wipe") -> void:
 		return
 	_lock()
 	_close_dialog_now()
+	# R162：由出口进入梦境（不走 _enter_dream）时也记下来源，醒转回到来源而非兜底堂屋。
+	var entering_dream: bool = bool((scenes[to] as Dictionary).get("dream", false))
+	if entering_dream and not bool(data.get("dream", false)):
+		_return_scene = scene_id
+		_return_spawn = ""
 	if fx == null:
 		_enter(to, spawn_name, true)
 		if not chapter.visible:
@@ -475,28 +488,55 @@ func _update_nearby() -> void:
 	_nearest_spot = {}
 	_nearest_npc = {}
 	_nearest_exit = {}
-	var best: float = SPOT_RADIUS
+	_primary = {}
+	_primary_kind = ""
+	_secondary_label = ""
+	var candidates: Array = []
 	for spot in data.get("spots", []) as Array:
 		var s: Dictionary = spot as Dictionary
-		var at: Vector2 = s.get("pos", Vector2.ZERO) as Vector2
-		var distance: float = player.pos.distance_to(at)
-		if distance < best:
-			best = distance
-			_nearest_spot = s
-	var npc_best: float = NPC_RADIUS
+		var distance: float = player.pos.distance_to(s.get("pos", Vector2.ZERO) as Vector2)
+		if distance <= SPOT_RADIUS:
+			candidates.append({"kind": "spot", "data": s, "dist": distance})
 	for npc in data.get("npcs", []) as Array:
 		var n: Dictionary = npc as Dictionary
 		var distance: float = player.pos.distance_to(n.get("pos", Vector2.ZERO) as Vector2)
-		if distance < npc_best:
-			npc_best = distance
-			_nearest_npc = n
-	var exit_best: float = EXIT_RADIUS
+		if distance <= NPC_RADIUS:
+			candidates.append({"kind": "npc", "data": n, "dist": distance})
 	for exit in data.get("exits", []) as Array:
 		var e: Dictionary = exit as Dictionary
 		var distance: float = player.pos.distance_to(e.get("pos", Vector2.ZERO) as Vector2)
-		if distance < exit_best:
-			exit_best = distance
-			_nearest_exit = e
+		if distance <= EXIT_RADIUS:
+			candidates.append({"kind": "exit", "data": e, "dist": distance})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.get("dist", 9999.0)) < float(b.get("dist", 9999.0)))
+	if candidates.is_empty():
+		return
+	var first: Dictionary = candidates[0]
+	_primary = first.get("data", {}) as Dictionary
+	_primary_kind = str(first.get("kind", ""))
+	match _primary_kind:
+		"spot":
+			_nearest_spot = _primary
+		"npc":
+			_nearest_npc = _primary
+		"exit":
+			_nearest_exit = _primary
+	for i in range(1, candidates.size()):
+		var other: Dictionary = candidates[i] as Dictionary
+		if str(other.get("kind", "")) != _primary_kind:
+			_secondary_label = _candidate_label(other)
+			break
+
+func _candidate_label(candidate: Dictionary) -> String:
+	var kind: String = str(candidate.get("kind", ""))
+	var entry: Dictionary = candidate.get("data", {}) as Dictionary
+	match kind:
+		"npc":
+			return str(entry.get("name", ""))
+		"spot":
+			return str(entry.get("label", ""))
+		"exit":
+			return str(entry.get("label", ""))
+	return ""
 
 func _update_camera_text() -> void:
 	if _nearest_npc.is_empty() and _nearest_spot.is_empty() and _nearest_exit.is_empty():
@@ -505,12 +545,15 @@ func _update_camera_text() -> void:
 			_bubble_bg.visible = false
 		return
 	var caption: String = ""
-	if not _nearest_npc.is_empty():
-		caption = "E  和「" + str(_nearest_npc.get("name", "")) + "」说话"
-	elif not _nearest_spot.is_empty():
-		caption = "E  " + str(_nearest_spot.get("label", ""))
-	elif not _nearest_exit.is_empty():
-		caption = "E  " + str(_nearest_exit.get("label", ""))
+	match _primary_kind:
+		"npc":
+			caption = "E  和「" + str(_primary.get("name", "")) + "」说话"
+		"spot":
+			caption = "E  " + str(_primary.get("label", ""))
+		"exit":
+			caption = "E  " + str(_primary.get("label", ""))
+	if not _secondary_label.is_empty():
+		caption += "（旁边还有东西）"
 	var screen: Vector2 = get_viewport().get_canvas_transform() * player.pos
 	_bubble.text = caption
 	var cache_key: String = caption + "|" + str(FONT_SIZE_HUD)
@@ -618,14 +661,13 @@ func _interact() -> void:
 		return
 	if _locked or chapter.visible or _present_layer_open():
 		return
-	if not _nearest_npc.is_empty():
-		_say_npc(_nearest_npc)
-		return
-	if not _nearest_spot.is_empty():
-		_use_spot(_nearest_spot)
-		return
-	if not _nearest_exit.is_empty():
-		_use_exit(_nearest_exit)
+	match _primary_kind:
+		"npc":
+			_say_npc(_primary)
+		"spot":
+			_use_spot(_primary)
+		"exit":
+			_use_exit(_primary)
 
 func _set_hint_visible(value: bool) -> void:
 	if _hint_band != null:
@@ -650,6 +692,94 @@ func _on_evidence_result(stance: String, item_id: String, npc: Dictionary) -> vo
 		TurnState.set_flag("presented_" + person, true)
 		TurnState.unlock_person(person, true)
 	_save_position()
+
+# ---- R159 结局结算页：列出收集度与缺失项，给回标题 / 继续逛逛入口。
+func _build_ending_panel() -> void:
+	_ending_layer = CanvasLayer.new()
+	_ending_layer.layer = 130
+	add_child(_ending_layer)
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.04, 0.05, 0.06, 0.86)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ending_layer.add_child(dim)
+	var board: ColorRect = ColorRect.new()
+	board.color = Color("#243036")
+	board.position = Vector2(120, 70)
+	board.size = Vector2(720, 460)
+	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ending_layer.add_child(board)
+
+	_ending_title = SKIN.make_label("", 24, SKIN.GOLD, 660.0, HORIZONTAL_ALIGNMENT_CENTER)
+	_ending_title.position = Vector2(150, 96)
+	_ending_layer.add_child(_ending_title)
+
+	_ending_body = SKIN.make_label("", 15, SKIN.PAPER, 660.0)
+	_ending_body.position = Vector2(150, 150)
+	_ending_body.size = Vector2(660, 120)
+	_ending_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ending_layer.add_child(_ending_body)
+
+	_ending_summary = SKIN.make_label("", 13, SKIN.PAPER_DIM, 660.0)
+	_ending_summary.position = Vector2(150, 290)
+	_ending_layer.add_child(_ending_summary)
+
+	_ending_missing = SKIN.make_label("", 12, Color(SKIN.GOLD, 0.9), 660.0)
+	_ending_missing.position = Vector2(150, 330)
+	_ending_missing.size = Vector2(660, 90)
+	_ending_missing.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ending_layer.add_child(_ending_missing)
+
+	var title_btn: Button = SKIN.make_button("回标题", 15, 220.0, 40.0)
+	title_btn.position = Vector2(250, 456)
+	title_btn.pressed.connect(_ending_to_title)
+	_ending_layer.add_child(title_btn)
+	var roam_btn: Button = SKIN.make_button("继续逛逛", 15, 220.0, 40.0)
+	roam_btn.position = Vector2(490, 456)
+	roam_btn.pressed.connect(_close_ending_panel)
+	_ending_layer.add_child(roam_btn)
+
+func _open_ending_panel(tier: String) -> void:
+	if _ending_layer == null:
+		_build_ending_panel()
+	var ending: Dictionary = Data.ending(tier)
+	_ending_title.text = str(ending.get("title", ""))
+	_ending_body.text = str(ending.get("body", ""))
+	var held_ev: Array[String] = puzzle.all_evidence()
+	var held_cl: Array[String] = puzzle.all_clues()
+	_ending_summary.text = "已解开 推论 %d/5 · 物证 %d/10" % [held_cl.size(), held_ev.size()]
+	var missing_ev: Array[String] = []
+	for eid in PuzzleState.EVIDENCE_NAMES.keys():
+		if not held_ev.has(str(eid)):
+			missing_ev.append(puzzle.evidence_name(str(eid)))
+	var missing_cl: Array[String] = []
+	for cid in PuzzleState.CLUE_NAMES.keys():
+		if not held_cl.has(str(cid)):
+			missing_cl.append(puzzle.clue_name(str(cid)))
+	var missing_text: String = ""
+	if missing_ev.is_empty() and missing_cl.is_empty():
+		missing_text = "这一趟能带上的，都带上了。"
+	else:
+		missing_text = "还没记下："
+		if not missing_cl.is_empty():
+			missing_text += "推论「" + "、".join(missing_cl) + "」"
+		if not missing_ev.is_empty():
+			if not missing_cl.is_empty():
+				missing_text += "；"
+			missing_text += "物证「" + "、".join(missing_ev) + "」"
+		missing_text += "（回镇上还能再找）"
+	_ending_missing.text = missing_text
+	_locked = true
+	_ending_layer.visible = true
+
+func _close_ending_panel() -> void:
+	if _ending_layer != null:
+		_ending_layer.visible = false
+	_unlock()
+
+func _ending_to_title() -> void:
+	_save_position()
+	get_tree().change_scene_to_file("res://title/title.tscn")
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -839,8 +969,7 @@ func _use_spot(spot: Dictionary) -> void:
 			var tier: String = TurnState.ending_tier
 			if tier.is_empty():
 				tier = TurnState.settle_collection_tier(puzzle.all_evidence().size(), puzzle.all_clues().size())
-			var ending: Dictionary = Data.ending(tier)
-			say(str(ending.get("title", "")) + "\n" + str(ending.get("body", "")), "旁白")
+			_open_ending_panel(tier)
 		"examine":
 			var ex_lock: Dictionary = spot.get("lock", {}) as Dictionary
 			if puzzle != null and not ex_lock.is_empty():

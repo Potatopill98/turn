@@ -2,7 +2,8 @@ extends RefCounted
 
 # B1 物证 / 推论 / 条件锁状态层。
 # 公开接口按审计命名：has_evidence / add_evidence / try_combine / has_clue / lock_state。
-# 状态持久化到 TurnState 的 flag（JSON 数组），换场景回来不丢；重复拾取返回 false。
+# R152 根治：状态唯一数据源是 TurnState flags（JSON 数组），本类不再维护本地缓存；
+# 世界层实例与手记层实例各自 new，每次读写都落在同一份 flags 上，同会话不再分叉。
 
 signal evidence_gained(id: String)
 
@@ -73,29 +74,22 @@ const FLAG_EVIDENCE: String = "pz_evidence"
 const FLAG_CLUE: String = "pz_clues"
 const FLAG_FRESH: String = "pz_fresh"
 
-var _evidence: Array[String] = []
-var _clues: Array[String] = []
-var _fresh: Array[String] = []
-
-func _init() -> void:
-	_load()
-
-# ------------------------------------------------------------ 读取
+# ------------------------------------------------------------ 读取（直读 flags）
 
 func has_evidence(id: String) -> bool:
-	return _evidence.has(id)
+	return all_evidence().has(id)
 
 func has_clue(id: String) -> bool:
-	return _clues.has(id)
+	return all_clues().has(id)
 
 func all_evidence() -> Array[String]:
-	return _evidence.duplicate()
+	return _read_list(FLAG_EVIDENCE)
 
 func all_clues() -> Array[String]:
-	return _clues.duplicate()
+	return _read_list(FLAG_CLUE)
 
 func fresh_ids() -> Array[String]:
-	return _fresh.duplicate()
+	return _read_list(FLAG_FRESH)
 
 func evidence_name(id: String) -> String:
 	return str(EVIDENCE_NAMES.get(id, id))
@@ -125,35 +119,35 @@ func clue_sources(id: String) -> Array[String]:
 			break
 	return out
 
-# ------------------------------------------------------------ 写入
+# ------------------------------------------------------------ 写入（直写 flags）
 
 func add_evidence(id: String) -> bool:
 	if id.is_empty():
 		return false
-	if _evidence.has(id):
+	var list: Array[String] = all_evidence()
+	if list.has(id):
 		return false
-	_evidence.append(id)
-	if not _fresh.has(id):
-		_fresh.append(id)
-	_save()
+	list.append(id)
+	_write_list(FLAG_EVIDENCE, list)
+	var fresh: Array[String] = fresh_ids()
+	if not fresh.has(id):
+		fresh.append(id)
+		_write_list(FLAG_FRESH, fresh)
 	evidence_gained.emit(id)
 	return true
 
 func try_combine(a: String, b: String) -> String:
 	if a.is_empty() or b.is_empty():
 		return ""
-	if not _evidence.has(a) or not _evidence.has(b):
+	if not has_evidence(a) or not has_evidence(b):
 		return ""
 	var key: String = _pair_key(a, b)
 	if not COMBOS.has(key):
 		return ""
 	var clue: String = str(COMBOS[key])
-	if _clues.has(clue):
+	if has_clue(clue):
 		return ""
-	_clues.append(clue)
-	if not _fresh.has(clue):
-		_fresh.append(clue)
-	_save()
+	_add_clue(clue)
 	return clue
 
 # 推理台提交：返回 {ok, clue, reason}。错解不消耗物证、不产生推论。
@@ -166,30 +160,32 @@ func combine_attempt(a: String, b: String) -> Dictionary:
 	if not COMBOS.has(key):
 		return {"ok": false, "clue": "", "reason": "这两件各说各的，凑不到一处去。"}
 	var clue: String = str(COMBOS[key])
-	if _clues.has(clue):
+	if has_clue(clue):
 		return {"ok": false, "clue": "", "reason": "这条推论已经记在手记里了。"}
-	_clues.append(clue)
-	if not _fresh.has(clue):
-		_fresh.append(clue)
-	_save()
+	_add_clue(clue)
 	return {"ok": true, "clue": clue, "reason": ""}
 
 func add_clue(id: String) -> bool:
-	if id.is_empty() or _clues.has(id):
+	if id.is_empty() or has_clue(id):
 		return false
-	_clues.append(id)
-	if not _fresh.has(id):
-		_fresh.append(id)
-	_save()
+	_add_clue(id)
 	return true
 
-func clear_fresh() -> void:
-	_fresh.clear()
-	_save()
+func _add_clue(clue: String) -> void:
+	var list: Array[String] = all_clues()
+	list.append(clue)
+	_write_list(FLAG_CLUE, list)
+	var fresh: Array[String] = fresh_ids()
+	if not fresh.has(clue):
+		fresh.append(clue)
+		_write_list(FLAG_FRESH, fresh)
 
-# 从 TurnState 重新载入（手记面板持有独立实例时，打开前调用以同步世界层拾取结果）。
+func clear_fresh() -> void:
+	_write_list(FLAG_FRESH, [])
+
+# 兼容旧调用：数据源本就在 flags 上，无需重载。
 func reload() -> void:
-	_load()
+	pass
 
 # ------------------------------------------------------------ 条件锁
 
@@ -199,11 +195,11 @@ func lock_state(lock: Dictionary) -> Dictionary:
 	var missing: Array[String] = []
 	for eid in lock.get("evidence", []) as Array:
 		var e: String = str(eid)
-		if not _evidence.has(e):
+		if not has_evidence(e):
 			missing.append(e)
 	for cid in lock.get("clues", []) as Array:
 		var c: String = str(cid)
-		if not _clues.has(c):
+		if not has_clue(c):
 			missing.append(c)
 	var hint: String = str(lock.get("hint", ""))
 	var result: Dictionary = {
@@ -219,16 +215,6 @@ static func _pair_key(a: String, b: String) -> String:
 	if a <= b:
 		return a + "|" + b
 	return b + "|" + a
-
-func _load() -> void:
-	_evidence = _read_list(FLAG_EVIDENCE)
-	_clues = _read_list(FLAG_CLUE)
-	_fresh = _read_list(FLAG_FRESH)
-
-func _save() -> void:
-	_write_list(FLAG_EVIDENCE, _evidence)
-	_write_list(FLAG_CLUE, _clues)
-	_write_list(FLAG_FRESH, _fresh)
 
 func _read_list(flag: String) -> Array[String]:
 	var out: Array[String] = []
