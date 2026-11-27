@@ -92,7 +92,12 @@ func _draw() -> void:
 		drawables.append({"kind": "prop", "sort": float((prop as Dictionary).get("sort", 0.0)), "data": prop})
 	for npc in data.get("npcs", []) as Array:
 		var npc_d: Dictionary = npc as Dictionary
-		drawables.append({"kind": "npc", "sort": float((npc_d.get("pos", Vector2.ZERO) as Vector2).y), "data": npc_d})
+		if world != null and world.has_method("npc_available") and not bool(world.npc_available(npc_d)):
+			continue
+		var npc_at: Vector2 = npc_d.get("pos", Vector2.ZERO) as Vector2
+		if world != null and world.has_method("npc_pos"):
+			npc_at = world.npc_pos(npc_d) as Vector2
+		drawables.append({"kind": "npc", "sort": npc_at.y, "data": npc_d})
 	drawables.append({"kind": "player", "sort": (player.pos as Vector2).y, "data": player})
 	drawables.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["sort"]) < float(b["sort"]))
 	for item in drawables:
@@ -162,6 +167,8 @@ func _draw_soft_rect(rect: Rect2, color: Color) -> void:
 
 func _draw_npc(npc: Dictionary) -> void:
 	var at: Vector2 = npc.get("pos", Vector2.ZERO) as Vector2
+	if world != null and world.has_method("npc_pos"):
+		at = world.npc_pos(npc) as Vector2
 	draw_set_transform(at, 0.0, Vector2(1.0, 0.42))
 	draw_circle(Vector2(0, 1), 13.0, Color(0.05, 0.05, 0.04, 0.30))
 	draw_set_transform(Vector2.ZERO)
@@ -230,6 +237,8 @@ func _draw_spots() -> void:
 		target = world.current_target_spot() as Dictionary
 	for spot in data.get("spots", []) as Array:
 		var s: Dictionary = spot as Dictionary
+		if world != null and world.has_method("spot_available") and not bool(world.spot_available(s)):
+			continue
 		var at: Vector2 = s.get("pos", Vector2.ZERO) as Vector2
 		var is_near: bool = not nearest.is_empty() and nearest.get("pos", Vector2.ZERO) == at
 		var used: bool = false

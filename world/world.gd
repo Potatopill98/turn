@@ -24,6 +24,16 @@ const FOLLOW_ZOOM: float = 1.35
 const CAM_LEAD: float = 20.0
 const DIALOG_DOLLY: float = 24.0
 
+# R203 小镇日常：时段只在坐下/收工/明确等待时推进；对话与读信不推进。
+const PHASES: Array[String] = ["afternoon", "dusk", "night", "leave"]
+const PHASE_NAMES: Dictionary = {
+	"afternoon": "午后",
+	"dusk": "傍晚",
+	"night": "入夜",
+	"leave": "临走",
+}
+const PHASE_FLAG: String = "turn_phase"
+
 # 出示面板卡 id -> 世界层物证 id：A2 正确卡走完后，走原 present 奖励链。
 const PANEL_CARD_TO_EVIDENCE: Dictionary = {
 	"e_shoes": "ev_shoes",
@@ -144,6 +154,16 @@ var _ending_title: Label = null
 var _ending_body: Label = null
 var _ending_summary: Label = null
 var _ending_missing: Label = null
+var _phase_label: Label = null
+var _choice_layer: CanvasLayer = null
+var _choice_panel: Panel = null
+var _choice_list: Control = null
+var _choice_title: Label = null
+var _choice_open: bool = false
+var _choice_npc: Dictionary = {}
+var _choice_options: Array = []
+var _pending_choice_npc: Dictionary = {}
+var _pending_choices: Array = []
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -235,6 +255,11 @@ func _build_hud() -> void:
 	_scene_sub = SKIN.make_label("", 12, SKIN.GOLD_DIM)
 	_scene_sub.position = Vector2(26, 34)
 	_hud_root.add_child(_scene_sub)
+
+	_phase_label = SKIN.make_label("", 11, SKIN.GOLD_DIM, 132.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_phase_label.position = Vector2(612, 22)
+	_phase_label.add_theme_font_size_override("font_size", 12)
+	_hud_root.add_child(_phase_label)
 
 	_dialog_panel = Panel.new()
 	var sb: StyleBoxFlat = StyleBoxFlat.new()
@@ -372,6 +397,15 @@ func _enter(id: String, spawn_name: String = "", play_intro: bool = true) -> voi
 		head_tween.tween_property(_scene_title, "modulate:a", 1.0, 0.30)
 		head_tween.tween_property(_scene_sub, "modulate:a", 1.0, 0.45)
 	TurnState.set_flag("explore_spawn", spawn_name)
+	if id == "playground_night" and phase_index() < 2:
+		set_phase(2, false)
+	if id == "playground_day" and phase_index() >= 2:
+		# 夜里走“等到白天”的出口＝翻到下一个午后，避免“入夜”标题配白天景。
+		set_phase(0, false)
+	if id == "town_final" and phase_index() < 3:
+		set_phase(3, false)
+	_update_phase_label()
+	_close_choice_layer()
 	_save_progress()
 	if play_intro:
 		_play_intro()
@@ -395,7 +429,88 @@ func _lock() -> void:
 func _unlock() -> void:
 	_locked = false
 
-func travel(to: String, spawn_name: String = "", anim: String = "wipe") -> void:
+# ---- R203 时段：0 午后 / 1 傍晚 / 2 入夜 / 3 临走
+func phase_index() -> int:
+	return clampi(int(TurnState.get_flag(PHASE_FLAG, 0)), 0, PHASES.size() - 1)
+
+func phase_name() -> String:
+	return PHASES[phase_index()]
+
+func phase_text() -> String:
+	return str(PHASE_NAMES.get(phase_name(), "午后"))
+
+func set_phase(index: int, announce: bool = true) -> void:
+	var next: int = clampi(index, 0, PHASES.size() - 1)
+	if next == phase_index():
+		_update_phase_label()
+		return
+	TurnState.set_flag(PHASE_FLAG, next)
+	_update_phase_label()
+	_save_progress()
+	if announce:
+		toast("时段 · " + phase_text())
+
+func _update_phase_label() -> void:
+	if _phase_label == null:
+		return
+	var text: String = phase_text()
+	_phase_label.text = "● " + text
+	var color: Color = Color("#f0d29a")
+	match phase_name():
+		"dusk":
+			color = Color("#f5b57a")
+		"night":
+			color = Color("#b7d8ff")
+		"leave":
+			color = Color("#f0cfae")
+	_phase_label.add_theme_color_override("font_color", color)
+	_phase_label.add_theme_constant_override("outline_size", 3)
+	_phase_label.add_theme_color_override("font_outline_color", Color(0.03, 0.04, 0.05, 0.92))
+	_update_scene_title()
+	_apply_phase_tint()
+
+func _update_scene_title() -> void:
+	if _scene_title == null:
+		return
+	var scene: Dictionary = current_scene_data()
+	if scene.is_empty():
+		return
+	var base: String = str(scene.get("title", ""))
+	if bool(scene.get("phase_title", false)):
+		base = base.get_slice(" · ", 0)
+		_scene_title.text = base + " · " + phase_text()
+	else:
+		_scene_title.text = base
+
+func _apply_phase_tint() -> void:
+	if view == null:
+		return
+	var tint: Color = Color.WHITE
+	match phase_name():
+		"dusk":
+			tint = Color(1.0, 0.84, 0.68, 1.0)
+		"night":
+			tint = Color(0.68, 0.78, 1.0, 1.0)
+		"leave":
+			tint = Color(0.92, 0.78, 0.68, 1.0)
+	if scene_id.begins_with("dream_") or scene_id.ends_with("_night"):
+		tint = Color.WHITE
+	view.modulate = tint
+
+func _phase_allows(phases: Variant) -> bool:
+	if phases is Array:
+		var arr: Array = phases
+		if arr.is_empty():
+			return true
+		return arr.has(phase_name())
+	if phases is String:
+		var text: String = str(phases)
+		if text.is_empty():
+			return true
+		return text == phase_name()
+	return true
+
+func travel(to: String, spawn_name: String = "", anim: String = "wipe", on_arrive: Callable = Callable()) -> void:
 	if _locked or to.is_empty() or not scenes.has(to):
 		return
 	_lock()
@@ -409,6 +524,8 @@ func travel(to: String, spawn_name: String = "", anim: String = "wipe") -> void:
 		_enter(to, spawn_name, true)
 		if not chapter.visible:
 			_unlock()
+		if on_arrive.is_valid():
+			on_arrive.call()
 		return
 	if anim == "door":
 		var resume: Array = [false]
@@ -418,26 +535,38 @@ func travel(to: String, spawn_name: String = "", anim: String = "wipe") -> void:
 		if bool(data.get("dream", false)) and not bool((scenes[to] as Dictionary).get("dream", false)):
 			_return_scene = ""
 		_enter(to, spawn_name, true)
-		fx.door_reveal(func() -> void: _unlock())
+		fx.door_reveal(func() -> void:
+			_unlock()
+			if on_arrive.is_valid():
+				on_arrive.call()
+		)
 	else:
 		var mid: Callable = func() -> void:
 			if bool(data.get("dream", false)) and not bool((scenes[to] as Dictionary).get("dream", false)):
 				_return_scene = ""
 			_enter(to, spawn_name, true)
-		var done: Callable = func() -> void: _unlock()
+		var done: Callable = func() -> void:
+			_unlock()
+			if on_arrive.is_valid():
+				on_arrive.call()
 		fx.play_location_wipe(mid, done)
 
 func _close_dialog_now() -> void:
 	_dialog_open = false
 	_dialog_panel.visible = false
+	_dialog_speaker.visible = false
+	_dialog_label.visible = false
+	_dialog_hint.modulate.a = 0.0
 	_dialog_panel.modulate.a = 0.0
 	_dialog_hint.modulate.a = 0.0
 	_dialog_label.text = ""
 	_dialog_speaker.text = ""
+	_pending_choice_npc = {}
+	_pending_choices = []
 	_set_hint_visible(true)
 
 func _process(delta: float) -> void:
-	if not _locked and not chapter.visible and not _present_layer_open():
+	if not _locked and not chapter.visible and not _present_layer_open() and not _choice_open:
 		var motion: Vector2 = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 		var key_x: float = float(int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A)))
 		var key_y: float = float(int(Input.is_physical_key_pressed(KEY_S)) - int(Input.is_physical_key_pressed(KEY_W)))
@@ -449,6 +578,7 @@ func _process(delta: float) -> void:
 	_update_camera(false)
 	_update_camera_text()
 	_update_target_label()
+	_update_chore_cancel()
 
 	if _dialog_open:
 		if _type_progress < float(_type_full.length()):
@@ -533,12 +663,16 @@ func _update_nearby() -> void:
 	var candidates: Array = []
 	for spot in data.get("spots", []) as Array:
 		var s: Dictionary = spot as Dictionary
+		if not spot_available(s):
+			continue
 		var distance: float = player.pos.distance_to(s.get("pos", Vector2.ZERO) as Vector2)
 		if distance <= SPOT_RADIUS:
 			candidates.append({"kind": "spot", "data": s, "dist": distance})
 	for npc in data.get("npcs", []) as Array:
 		var n: Dictionary = npc as Dictionary
-		var distance: float = player.pos.distance_to(n.get("pos", Vector2.ZERO) as Vector2)
+		if not npc_available(n):
+			continue
+		var distance: float = player.pos.distance_to(npc_pos(n))
 		if distance <= NPC_RADIUS:
 			candidates.append({"kind": "npc", "data": n, "dist": distance})
 	for exit in data.get("exits", []) as Array:
@@ -572,13 +706,13 @@ func _candidate_label(candidate: Dictionary) -> String:
 		"npc":
 			return str(entry.get("name", ""))
 		"spot":
-			return str(entry.get("label", ""))
+			return spot_label(entry)
 		"exit":
 			return str(entry.get("label", ""))
 	return ""
 
 func _update_camera_text() -> void:
-	if _dialog_open or _present_layer_open() or chapter.visible:
+	if _dialog_open or _present_layer_open() or _choice_open or chapter.visible:
 		_bubble.visible = false
 		if _bubble_bg != null:
 			_bubble_bg.visible = false
@@ -595,7 +729,7 @@ func _update_camera_text() -> void:
 		"npc":
 			caption = "E  和「" + str(_primary.get("name", "")) + "」说话"
 		"spot":
-			caption = "E  " + str(_primary.get("label", ""))
+			caption = "E  " + spot_label(_primary)
 		"exit":
 			caption = "E  " + str(_primary.get("label", ""))
 	if not _secondary_label.is_empty():
@@ -622,10 +756,27 @@ func guidance_active() -> bool:
 	return puzzle != null and puzzle.all_evidence().is_empty()
 
 func current_target_spot() -> Dictionary:
+	# R203：小镇日常场景的 HUD 目标先指向“顺路能做的小事”，
+	# 帮完再指向“坐到天黑”，不再一上来就指回旧物证。
+	if bool(data.get("phase_title", false)):
+		for spot in data.get("spots", []) as Array:
+			var daily: Dictionary = spot as Dictionary
+			if str(daily.get("kind", "")) != "chore":
+				continue
+			if _spot_stage(daily) >= 2:
+				continue
+			if spot_available(daily):
+				return daily
+		for spot in data.get("spots", []) as Array:
+			var rest: Dictionary = spot as Dictionary
+			if str(rest.get("kind", "")) == "wait" and spot_available(rest):
+				return rest
 	if not guidance_active():
 		return {}
 	for spot in data.get("spots", []) as Array:
 		var s: Dictionary = spot as Dictionary
+		if not spot_available(s):
+			continue
 		if str(s.get("kind", "")) == "item" and not str(s.get("gives_evidence", "")).is_empty():
 			return s
 	return {}
@@ -637,7 +788,7 @@ func _update_target_label() -> void:
 	if target.is_empty():
 		_target_label.text = ""
 		return
-	_target_label.text = "目标：" + str(target.get("label", ""))
+	_target_label.text = "目标：" + spot_label(target)
 
 func _update_footstep() -> void:
 	if _footstep == null or player == null:
@@ -659,11 +810,62 @@ func nearest_npc() -> Dictionary:
 	return _nearest_npc
 
 func is_near_npc(npc: Dictionary) -> bool:
-	return not _nearest_npc.is_empty() and _nearest_npc.get("pos", Vector2.ZERO) == npc.get("pos", Vector2.ZERO)
+	return not _nearest_npc.is_empty() and npc_pos(_nearest_npc).distance_to(npc_pos(npc)) < 1.0
 
 func spot_used(spot: Dictionary) -> bool:
 	var key: String = _spot_key(spot)
+	if str(spot.get("kind", "")) == "chore":
+		return _spot_stage(spot) >= 2
 	return bool(_used.get(key, false)) or TurnState.has_flag("spot_" + key)
+
+func _spot_stage(spot: Dictionary) -> int:
+	var chore_id: String = str(spot.get("chore", ""))
+	if chore_id.is_empty():
+		return 0
+	return clampi(int(TurnState.get_flag("chore_" + chore_id, 0)), 0, 2)
+
+func spot_available(spot: Dictionary) -> bool:
+	if not _phase_allows(spot.get("phase", [])):
+		return false
+	var hide: String = str(spot.get("hide_if_flag", ""))
+	if not hide.is_empty() and TurnState.has_flag(hide):
+		return false
+	var show: String = str(spot.get("show_if_flag", ""))
+	if not show.is_empty() and not TurnState.has_flag(show):
+		return false
+	return true
+
+func npc_available(npc: Dictionary) -> bool:
+	if not _phase_allows(npc.get("phase", [])):
+		return false
+	var hide: String = str(npc.get("hide_if_flag", ""))
+	if not hide.is_empty() and TurnState.has_flag(hide):
+		return false
+	var show: String = str(npc.get("show_if_flag", ""))
+	if not show.is_empty() and not TurnState.has_flag(show):
+		return false
+	return true
+
+func npc_pos(npc: Dictionary) -> Vector2:
+	var base: Vector2 = npc.get("pos", Vector2.ZERO) as Vector2
+	var person: String = str(npc.get("id", ""))
+	if person.is_empty():
+		return base
+	if TurnState.has_flag("helped_" + person_key(person)) and npc.has("pos_helped"):
+		return npc.get("pos_helped", base) as Vector2
+	return base
+
+func person_key(person: String) -> String:
+	if person.begins_with("p_"):
+		return person.substr(2)
+	return person
+
+func spot_label(spot: Dictionary) -> String:
+	var labels: Array = spot.get("labels", []) as Array
+	if not labels.is_empty():
+		var stage: int = _spot_stage(spot)
+		return str(labels[clampi(stage, 0, labels.size() - 1)])
+	return str(spot.get("label", ""))
 
 func _spot_key(spot: Dictionary) -> String:
 	return scene_id + "_" + str(spot.get("label", "")) + "_" + str((spot.get("pos", Vector2.ZERO) as Vector2).x)
@@ -677,6 +879,8 @@ func say(text: String, speaker: String = "旁白") -> void:
 	_dialog_open = true
 	_dialog_hint.text = "E / 空格 继续"
 	_dialog_hint.modulate.a = 0.0
+	_dialog_speaker.visible = true
+	_dialog_label.visible = true
 	_dialog_panel.visible = true
 	_dialog_panel.modulate.a = 0.0
 	_set_hint_visible(false)
@@ -694,11 +898,22 @@ func _advance_dialog() -> void:
 		return
 	_dialog_open = false
 	_dialog_hint.modulate.a = 0.0
+	_dialog_speaker.visible = false
+	_dialog_label.visible = false
 	_set_hint_visible(true)
 	var t: Tween = create_tween()
 	t.tween_property(_dialog_panel, "modulate:a", 0.0, 0.12)
+	var pending_npc: Dictionary = _pending_choice_npc
+	var pending_options: Array = _pending_choices.duplicate()
+	_pending_choice_npc = {}
+	_pending_choices = []
+	if not pending_npc.is_empty() and not pending_options.is_empty():
+		# 读完这句招呼，再把选项摆出来。
+		_open_choice_layer(pending_npc, pending_options)
 
 func _interact() -> void:
+	if _choice_open:
+		return
 	if _dialog_open:
 		_advance_dialog()
 		return
@@ -738,11 +953,24 @@ func _on_evidence_result(stance: String, item_id: String, npc: Dictionary) -> vo
 		if card_ev == str(present.get("evidence", "")) and puzzle.add_evidence(grant):
 			_play_pickup(npc.get("pos", Vector2.ZERO) as Vector2, puzzle.evidence_name(grant))
 			toast("出示物证 · 得到 " + puzzle.evidence_name(grant))
+			_note_evidence_scene(grant)
 	_save_position()
 	if not person.is_empty():
 		TurnState.set_flag("presented_" + person, true)
 		TurnState.unlock_person(person, true)
+		if person == "p_zhou":
+			TurnState.set_flag("zhou_turned_back", true)
 	_save_position()
+	var after: String = str(npc.get("present_after", ""))
+	if not after.is_empty():
+		say(after, str(npc.get("name", "他")))
+		if person == "p_zhou":
+			_play_sfx("screw_back", "res://audio/prologue/tick.wav")
+
+func _note_evidence_scene(ev: String) -> void:
+	if ev.is_empty():
+		return
+	TurnState.set_flag("ev_seen_" + ev, scene_id)
 
 # ---- R159 结局结算页：列出收集度与缺失项，给回标题 / 继续逛逛入口。
 func _build_ending_panel() -> void:
@@ -852,40 +1080,97 @@ func _say_npc(npc: Dictionary) -> void:
 		if count == 0:
 			toast("认识了一个人 · " + who)
 
-	# 出示物证分支：尚未出示过，且手里有物证 → 进入选择层让玩家挑；空手走交谈台词。
-	var present_act: String = str(npc.get("present_act", ""))
-	if not present_act.is_empty() and not TurnState.has_flag("presented_" + person):
-		_open_evidence_panel(npc, present_act)
+	# R203：先给一句普通招呼，再由玩家自己选“帮忙 / 问 / 拿出旧物 / 走开”。
+	# 不再一见面就把四张物证卡糊到脸上。
+	var options: Array = _npc_choices(npc)
+	if not options.is_empty():
+		_pending_choice_npc = npc
+		_pending_choices = options
+		say(_npc_greeting(npc), who)
 		return
-	var present: Dictionary = npc.get("present", {}) as Dictionary
-	var present_ev: String = str(present.get("evidence", ""))
-	var present_flag: String = "presented_" + person
-	if not present_ev.is_empty() and not TurnState.has_flag(present_flag):
-		if puzzle != null and not puzzle.all_evidence().is_empty():
-			_open_present_layer(npc)
-			return
 	_say_npc_plain(npc)
 
-func _say_npc_plain(npc: Dictionary) -> void:
+func _npc_greeting(npc: Dictionary) -> String:
 	var person: String = str(npc.get("id", ""))
-	var who: String = str(npc.get("name", "他"))
-	var count: int = int(_talk_count.get("npc_" + person, 0))
-	# 物证感知分支：持有 / 未持有指定物证时说不同的话。
+	var key: String = person_key(person)
+	# 优先级：刚发生的事 > 已出示 > 帮过忙 > 当前时段 > 普通招呼。
+	if not key.is_empty() and TurnState.has_flag("recent_" + key):
+		TurnState.erase_flag("recent_" + key)
+		return str(npc.get("line_recent", npc.get("line", "……")))
+	if not person.is_empty() and TurnState.has_flag("presented_" + person):
+		if npc.has("line_after"):
+			return str(npc.get("line_after"))
+	var helped: bool = not key.is_empty() and TurnState.has_flag("helped_" + key)
+	if helped and npc.has("line_helped"):
+		return str(npc.get("line_helped"))
+	var by_phase: Dictionary = npc.get("lines_by_phase", {}) as Dictionary
+	if by_phase.has(phase_name()):
+		return str(by_phase[phase_name()])
 	var need: String = str(npc.get("needs_evidence", ""))
-	var text: String = str(npc.get("line", "……"))
 	if not need.is_empty() and puzzle != null:
 		if puzzle.has_evidence(need):
-			text = str(npc.get("lines_with_evidence", npc.get("line2", text)))
-		else:
-			text = str(npc.get("lines_without", text))
-	else:
-		if count == 1 and npc.has("line2"):
-			text = str(npc.get("line2"))
-		elif count >= 2 and npc.has("line3"):
-			text = str(npc.get("line3"))
-		elif count > 0 and npc.has("line2"):
-			text = str(npc.get("line2"))
-	say(text, who)
+			return str(npc.get("lines_with_evidence", npc.get("line2", npc.get("line", "……"))))
+		return str(npc.get("lines_without", npc.get("line", "……")))
+	var prior: int = int(_talk_count.get("npc_" + person, 0)) - 1
+	if prior >= 2 and npc.has("line3"):
+		return str(npc.get("line3"))
+	if prior >= 1 and npc.has("line2"):
+		return str(npc.get("line2"))
+	return str(npc.get("line", "……"))
+
+func _say_npc_plain(npc: Dictionary) -> void:
+	var who: String = str(npc.get("name", "他"))
+	say(_npc_greeting(npc), who)
+
+# ---- R203 交谈选项：数据里的 choices + 是否可出示物证（出示只从选项进入）。
+func _npc_choices(npc: Dictionary) -> Array:
+	var person: String = str(npc.get("id", ""))
+	if not person.is_empty() and TurnState.has_flag("presented_" + person):
+		return []
+	var out: Array = []
+	var raw: Array = npc.get("choices", []) as Array
+	for item in raw:
+		var opt: Dictionary = item as Dictionary
+		var hide: String = str(opt.get("hide_if_flag", ""))
+		if not hide.is_empty() and TurnState.has_flag(hide):
+			continue
+		if not _phase_allows(opt.get("phase", [])):
+			continue
+		var need: String = str(opt.get("requires_evidence", ""))
+		if not need.is_empty() and (puzzle == null or not puzzle.has_evidence(need)):
+			continue
+		out.append(opt)
+	var has_present: bool = false
+	for item in out:
+		if str((item as Dictionary).get("id", "")) == "present":
+			has_present = true
+			break
+	var act: String = str(npc.get("present_act", ""))
+	if not act.is_empty() and not has_present and _phase_allows(npc.get("present_phase", "")):
+		if _has_present_cards(npc, act):
+			out.append({"id": "present", "label": "拿出物证"})
+	var has_leave: bool = false
+	for item in out:
+		if str((item as Dictionary).get("id", "")) == "leave":
+			has_leave = true
+			break
+	if not has_leave:
+		out.append({"id": "leave", "label": "我先走了"})
+	return out
+
+func _has_present_cards(npc: Dictionary, act: String) -> bool:
+	if puzzle == null:
+		return false
+	var present: Dictionary = npc.get("present", {}) as Dictionary
+	var need: String = str(present.get("evidence", ""))
+	if not need.is_empty():
+		return puzzle.has_evidence(need)
+	for item in Data.evidence_items(act):
+		var card_id: String = str((item as Dictionary).get("id", ""))
+		var ev: String = str(PANEL_CARD_TO_EVIDENCE.get(card_id, ""))
+		if not ev.is_empty() and puzzle.has_evidence(ev):
+			return true
+	return false
 
 # 出示选择层：列出当前持有物证，挑错给拒绝台词，物证不消耗（R077/R088）。
 func _build_present_layer() -> void:
@@ -920,6 +1205,109 @@ func _build_present_layer() -> void:
 	chat_btn.pressed.connect(_present_pick.bind(""))
 	_present_panel.add_child(chat_btn)
 	_present_layer.visible = false
+
+func _build_choice_layer() -> void:
+	_choice_layer = CanvasLayer.new()
+	_choice_layer.layer = 118
+	add_child(_choice_layer)
+	var dim: ColorRect = ColorRect.new()
+	dim.color = Color(0.04, 0.05, 0.06, 0.34)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_choice_layer.add_child(dim)
+	_choice_panel = Panel.new()
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.07, 0.08, 0.96)
+	sb.border_color = Color(SKIN.GOLD, 0.42)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(8)
+	_choice_panel.add_theme_stylebox_override("panel", sb)
+	_choice_layer.add_child(_choice_panel)
+	_choice_title = SKIN.make_label("", 14, SKIN.GOLD)
+	_choice_title.position = Vector2(24, 16)
+	_choice_panel.add_child(_choice_title)
+	_choice_list = Control.new()
+	_choice_list.position = Vector2(24, 52)
+	_choice_panel.add_child(_choice_list)
+	var hint: Label = SKIN.make_label("数字键 / 鼠标选择　·　Esc 先不说了", 11, Color(SKIN.PAPER, 0.55))
+	hint.name = "ChoiceHint"
+	_choice_panel.add_child(hint)
+	_choice_layer.visible = false
+
+func _open_choice_layer(npc: Dictionary, options: Array) -> void:
+	if _choice_layer == null:
+		_build_choice_layer()
+	_choice_npc = npc
+	_choice_options = options
+	var who: String = str(npc.get("name", "他"))
+	_choice_title.text = "和「" + who + "」说话"
+	for child in _choice_list.get_children():
+		_choice_list.remove_child(child)
+		child.queue_free()
+	var index: int = 0
+	for item in options:
+		var opt: Dictionary = item as Dictionary
+		var label: String = "%d　%s" % [index + 1, str(opt.get("label", ""))]
+		var button: Button = SKIN.make_button(label, 13, 392.0, 34.0)
+		button.position = Vector2(0, index * 42)
+		button.pressed.connect(_choice_pick.bind(str(opt.get("id", ""))))
+		_choice_list.add_child(button)
+		index += 1
+	var panel_height: float = 92.0 + float(options.size()) * 42.0 + 24.0
+	_choice_panel.size = Vector2(440, panel_height)
+	_choice_panel.position = Vector2(260, clampf(310.0 - panel_height * 0.5, 64.0, 600.0 - panel_height - 18.0))
+	var hint: Label = _choice_panel.get_node("ChoiceHint") as Label
+	hint.position = Vector2(24, panel_height - 28.0)
+	_choice_layer.visible = true
+	_choice_open = true
+	_set_hint_visible(false)
+
+func _close_choice_layer() -> void:
+	if _choice_layer != null:
+		_choice_layer.visible = false
+	_choice_open = false
+	_choice_npc = {}
+	_choice_options = []
+	if not _dialog_open and not _present_layer_open():
+		_set_hint_visible(true)
+
+func _choice_pick(id: String) -> void:
+	var npc: Dictionary = _choice_npc
+	var who: String = str(npc.get("name", "他"))
+	var chosen: Dictionary = {}
+	for item in _choice_options:
+		var opt: Dictionary = item as Dictionary
+		if str(opt.get("id", "")) == id:
+			chosen = opt
+			break
+	_close_choice_layer()
+	if id == "leave" or id.is_empty():
+		return
+	if id == "present":
+		var act: String = str(npc.get("present_act", ""))
+		if not act.is_empty():
+			_open_evidence_panel(npc, act)
+		return
+	if id == "help":
+		_start_help_from_choice(npc)
+		return
+	var text: String = str(chosen.get("line", ""))
+	if not text.is_empty():
+		say(text, who)
+
+func _start_help_from_choice(npc: Dictionary) -> void:
+	var person: String = str(npc.get("id", ""))
+	for spot in data.get("spots", []) as Array:
+		var s: Dictionary = spot as Dictionary
+		if str(s.get("kind", "")) != "chore":
+			continue
+		if str(s.get("person", "")) != person:
+			continue
+		if not spot_available(s):
+			continue
+		_use_chore(s)
+		return
+	say("现在不是搭手的时候。", str(npc.get("name", "他")))
 
 func _open_present_layer(npc: Dictionary) -> void:
 	if _present_layer == null:
@@ -986,13 +1374,20 @@ func _use_spot(spot: Dictionary) -> void:
 	var arg: String = str(spot.get("arg", ""))
 	var key: String = _spot_key(spot)
 	var at: Vector2 = spot.get("pos", Vector2.ZERO) as Vector2
-	var label: String = str(spot.get("label", "记下了"))
+	var label: String = spot_label(spot)
 	var first_time: bool = not bool(_used.get(key, false)) and not TurnState.has_flag("spot_" + key)
-	_used[key] = true
-	TurnState.set_flag("spot_" + key, true)
+	if kind != "chore" and kind != "wait":
+		_used[key] = true
+		TurnState.set_flag("spot_" + key, true)
 	if view != null:
 		view.pulse(at, Color(0.98, 0.84, 0.48, 1.0))
 	match kind:
+		"chore":
+			_use_chore(spot)
+			return
+		"wait":
+			_use_wait(spot)
+			return
 		"item":
 			var ev: String = str(spot.get("gives_evidence", ""))
 			if not ev.is_empty() and puzzle != null:
@@ -1001,6 +1396,7 @@ func _use_spot(spot: Dictionary) -> void:
 				elif puzzle.add_evidence(ev):
 					TurnState.unlock_item(arg)
 					TurnState.note_progress()
+					_note_evidence_scene(ev)
 					_play_pickup(at, puzzle.evidence_name(ev))
 					_save_position()
 					say(label + "。我把它记进了手记。", "手记")
@@ -1039,7 +1435,8 @@ func _use_spot(spot: Dictionary) -> void:
 			say(text, "旁白")
 		"travel":
 			var travel_lock: Dictionary = spot.get("lock", {}) as Dictionary
-			_gate_navigate(arg, "", "wipe", travel_lock)
+			var travel_to: String = _resolve_travel_to(spot, "arg")
+			_gate_navigate(travel_to, "", "wipe", travel_lock)
 		"wake":
 			_wake()
 		"dream":
@@ -1054,13 +1451,108 @@ func _use_spot(spot: Dictionary) -> void:
 		_:
 			say(arg, "旁白")
 
+func _use_chore(spot: Dictionary) -> void:
+	var chore_id: String = str(spot.get("chore", ""))
+	if chore_id.is_empty():
+		return
+	var person: String = str(spot.get("person", ""))
+	var stage: int = _spot_stage(spot)
+	var labels: Array = spot.get("labels", []) as Array
+	if stage >= 2:
+		var done_text: String = str(spot.get("done_line", "这里已经收拾好了。"))
+		say(done_text, "旁白")
+		return
+	if stage == 0:
+		TurnState.set_flag("chore_" + chore_id, 1)
+		_used[_spot_key(spot)] = true
+		_save_position()
+		_play_sfx("chore_" + chore_id, "res://audio/prologue/latch.wav")
+		var first_text: String = ""
+		var lines: Array = spot.get("lines", []) as Array
+		if not lines.is_empty():
+			first_text = str(lines[0])
+		say(first_text, "旁白")
+		return
+	TurnState.set_flag("chore_" + chore_id, 2)
+	_used[_spot_key(spot)] = true
+	if not person.is_empty():
+		TurnState.set_flag("helped_" + person_key(person), true)
+		TurnState.set_flag("recent_" + person_key(person), true)
+		TurnState.unlock_person(person, false)
+	var done_phase: int = int(spot.get("done_phase", -1))
+	if done_phase >= 0:
+		set_phase(done_phase, false)
+	var done_toast: String = str(spot.get("done_toast", ""))
+	if not done_toast.is_empty():
+		toast(done_toast)
+	var body: String = ""
+	var lines2: Array = spot.get("lines", []) as Array
+	if lines2.size() >= 2:
+		body = str(lines2[1])
+	var done_line: String = str(spot.get("done_line", ""))
+	if not done_line.is_empty():
+		body = body + ("\n" if not body.is_empty() else "") + done_line
+	say(body, "旁白")
+	_play_sfx("chore_done_" + chore_id, "res://audio/prologue/tick.wav")
+	_save_position()
+
+func _use_wait(spot: Dictionary) -> void:
+	var phase_to: int = int(spot.get("phase_to", 2))
+	var to: String = _resolve_travel_to(spot, "to")
+	set_phase(phase_to, false)
+	var text: String = str(spot.get("toast", ""))
+	if not text.is_empty():
+		toast(text)
+	if to.is_empty():
+		return
+	var arrive_line: String = str(spot.get("arrive_line", ""))
+	if arrive_line.is_empty():
+		travel(to, str(spot.get("spawn", "")), "wipe")
+		return
+	# 坐等入夜：旧的首访长旁白不再播，落地后用一句「天暗了」承接。
+	TurnState.set_flag("intro_" + to, true)
+	travel(to, str(spot.get("spawn", "")), "wipe", func() -> void:
+		say(arrive_line, "旁白")
+	)
+
+func _update_chore_cancel() -> void:
+	if player == null or data.is_empty() or _dialog_open or _choice_open:
+		return
+	for spot in data.get("spots", []) as Array:
+		var s: Dictionary = spot as Dictionary
+		if str(s.get("kind", "")) != "chore":
+			continue
+		if _spot_stage(s) != 1:
+			continue
+		var limit: float = float(s.get("cancel_distance", 0.0))
+		if limit <= 0.0:
+			continue
+		if player.pos.distance_to(s.get("pos", Vector2.ZERO) as Vector2) > limit:
+			TurnState.set_flag("chore_" + str(s.get("chore", "")), 0)
+			var text: String = str(s.get("cancel_line", ""))
+			if not text.is_empty():
+				say(text, "旁白")
+
+func _resolve_travel_to(entry: Dictionary, key: String = "to") -> String:
+	var target: String = str(entry.get(key, ""))
+	var by_phase: Dictionary = entry.get("to_by_phase", {}) as Dictionary
+	if by_phase.is_empty():
+		return target
+	var now: String = phase_name()
+	if by_phase.has(now):
+		return str(by_phase[now])
+	if by_phase.has("default"):
+		return str(by_phase["default"])
+	return target
+
 func _use_exit(exit: Dictionary) -> void:
 	if bool(exit.get("wake", false)):
 		_wake()
 		return
 	var lock: Dictionary = exit.get("lock", {}) as Dictionary
 	var anim: String = "door" if str(exit.get("spawn", "")) == "door" else "wipe"
-	_gate_navigate(str(exit.get("to", "")), str(exit.get("spawn", "")), anim, lock)
+	var target: String = _resolve_travel_to(exit, "to")
+	_gate_navigate(target, str(exit.get("spawn", "")), anim, lock)
 
 # 统一跳转 gate：出口 / travel 热点 / 梦链全部从这里过锁判定，禁止分支直调 travel。
 func _gate_navigate(to: String, spawn_name: String, anim: String, lock: Dictionary) -> void:
@@ -1175,6 +1667,25 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	var key_event: InputEventKey = event as InputEventKey
+	if _choice_open:
+		if key_event.physical_keycode == KEY_ESCAPE:
+			_close_choice_layer()
+		else:
+			var index: int = -1
+			match key_event.physical_keycode:
+				KEY_1:
+					index = 0
+				KEY_2:
+					index = 1
+				KEY_3:
+					index = 2
+				KEY_4:
+					index = 3
+			if index >= 0 and index < _choice_options.size():
+				var opt: Dictionary = _choice_options[index] as Dictionary
+				_choice_pick(str(opt.get("id", "")))
+		get_viewport().set_input_as_handled()
+		return
 	if key_event.physical_keycode == KEY_E:
 		_interact()
 		get_viewport().set_input_as_handled()

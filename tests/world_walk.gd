@@ -56,6 +56,7 @@ func _ready() -> void:
 	await _new_puzzle_chains()
 	_combo_bench_checks()
 	await _present_flow_checks()
+	await _daily_checks()
 	_ending_tier_checks()
 	await _title_checks()
 	_b6_delivery_checks()
@@ -136,7 +137,7 @@ func _static_checks() -> void:
 		for spot in data.get("spots", []) as Array:
 			var s: Dictionary = spot as Dictionary
 			var kind: String = str(s.get("kind", ""))
-			if not (kind in ["talk", "item", "travel", "story", "dream", "wake", "combo", "examine", "ending_review"]):
+			if not (kind in ["talk", "item", "travel", "story", "dream", "wake", "combo", "examine", "ending_review", "chore", "wait"]):
 				_fail("%s 热点类型非法 %s" % [scene_id, kind])
 			if kind == "travel" and not scenes.has(str(s.get("arg", ""))):
 				_fail("%s 热点 travel 目标不存在 %s" % [scene_id, str(s.get("arg", ""))])
@@ -991,15 +992,35 @@ func _present_flow_checks() -> void:
 	if npc.is_empty():
 		_fail("夜场找不到 p_zhou")
 		return
-	# R183：周德海接入 A2 选择面板；面板可达、非干扰卡 ≥2，对 / 错两路都有。
-	if str(npc.get("present_act", "")) != "A2":
-		_fail("p_zhou 未接 present_act=A2")
+	# R203：先招呼、后选项；不再一见面直接弹四张卡。
+	world.puzzle.add_evidence("ev_shoes")
 	world._say_npc(npc)
-	if not world._present_layer_open():
-		_fail("与周德海交谈应打开 A2 出示面板")
+	if world._present_layer_open():
+		_fail("普通招呼不应直接打开 A2 出示面板")
+		return
+	if not world._dialog_open:
+		_fail("与周德海交谈应先给一句招呼")
+		return
+	world._advance_dialog()
+	world._advance_dialog()
+	if not world._choice_open:
+		_fail("招呼读完后应出现交谈选项")
+		return
+	var has_present: bool = false
+	for item in world._choice_options:
+		if str((item as Dictionary).get("id", "")) == "present":
+			has_present = true
+	if not has_present:
+		_fail("持有旧鞋时选项里应有「拿出旧鞋」")
 		return
 	_ok()
-	print("  A2 面板从夜场周德海打开  OK")
+	print("  招呼 → 选项 → 玩家自己选「拿出旧鞋」  OK")
+	world._choice_pick("present")
+	if not world._present_layer_open():
+		_fail("选「拿出旧鞋」后应打开 A2 出示面板")
+		return
+	_ok()
+	print("  A2 面板由显式选项打开  OK")
 	var panel: CanvasLayer = world._evidence_panel
 	var items: Array = panel._items
 	var non_decoy: int = 0
@@ -1030,6 +1051,153 @@ func _present_flow_checks() -> void:
 		print("  正解 e_shoes：得到 ev_mirror 并登记已出示  OK")
 	else:
 		_fail("正解出示应得到 ev_mirror")
+	world._close_dialog_now()
+
+func _daily_checks() -> void:
+	print("== 小镇日常：时段 / 帮忙 / 回访（R203）==")
+	TurnState.reset()
+	world.puzzle.reload()
+	world._close_dialog_now()
+	world._close_choice_layer()
+	world.force_scene("playground_day")
+	await get_tree().process_frame
+	if world.phase_name() == "afternoon":
+		_ok()
+		print("  初始时段 = 午后  OK")
+	else:
+		_fail("初始时段应为 afternoon，实际 %s" % world.phase_name())
+
+	var zhou: Dictionary = _scene_npc("playground_day", "p_zhou")
+	var chore: Dictionary = _scene_spot("playground_day", "chore", "zhou_swing")
+	var bench: Dictionary = _scene_spot("playground_day", "wait", "")
+	if zhou.is_empty() or chore.is_empty() or bench.is_empty():
+		_fail("白天游乐场缺 周德海 / 秋千 chore / 长椅 wait")
+		return
+	# 招呼 → 选项「扶一下」，不直接开物证面板。
+	world.player.pos = world.npc_pos(zhou) + Vector2(0, 16)
+	world._say_npc(zhou)
+	if world._present_layer_open():
+		_fail("白天招呼不应打开物证层")
+	world._advance_dialog()
+	world._advance_dialog()
+	if world._choice_open:
+		_ok()
+		print("  白天招呼后出现交谈选项  OK")
+	else:
+		_fail("白天招呼后应出现交谈选项")
+	var has_help: bool = false
+	for item in world._choice_options:
+		if str((item as Dictionary).get("id", "")) == "help":
+			has_help = true
+	if has_help:
+		_ok()
+		print("  选项含「扶一下」  OK")
+	else:
+		_fail("白天选项缺「扶一下」")
+	world._choice_pick("help")
+	if world._spot_stage(chore) == 1 and not TurnState.has_flag("helped_zhou"):
+		_ok()
+		print("  第一次 E：扶稳、链条停摆，尚未算帮完  OK")
+	else:
+		_fail("第一次帮忙应停在 stage=1，实际 %d" % world._spot_stage(chore))
+	world._close_dialog_now()
+	# 走开 → 取消，秋千恢复。
+	world.player.pos = Vector2(820, 560)
+	world._update_chore_cancel()
+	if world._spot_stage(chore) == 0:
+		_ok()
+		print("  走开约 200px：帮忙取消，可重来  OK")
+	else:
+		_fail("走开后帮忙未取消，stage=%d" % world._spot_stage(chore))
+	world._close_dialog_now()
+	# 原地重来两次 E。
+	world.player.pos = chore.get("pos", Vector2.ZERO) as Vector2
+	world._use_chore(chore)
+	world._close_dialog_now()
+	world._use_chore(chore)
+	world._close_dialog_now()
+	if TurnState.has_flag("helped_zhou") and world._spot_stage(chore) == 2 and world.phase_name() == "dusk":
+		_ok()
+		print("  两次 E 完成：helped_zhou、时段推进到傍晚  OK")
+	else:
+		_fail("帮忙完成状态异常：helped=%s stage=%d phase=%s" % [str(TurnState.has_flag("helped_zhou")), world._spot_stage(chore), world.phase_name()])
+	# 重复接触不再重复发状态。
+	world._use_chore(chore)
+	world._close_dialog_now()
+	if world._spot_stage(chore) == 2 and world.phase_name() == "dusk":
+		_ok()
+		print("  已帮过的家务重复接触：不重复推进  OK")
+	else:
+		_fail("重复帮忙改动了状态")
+	# 长椅等到天黑。
+	world.player.pos = bench.get("pos", Vector2.ZERO) as Vector2
+	world._use_wait(bench)
+	var waited: int = 0
+	while waited < 200 and world.scene_id != "playground_night":
+		await get_tree().process_frame
+		waited += 1
+	await get_tree().process_frame
+	if world.scene_id == "playground_night" and world.phase_name() == "night":
+		_ok()
+		print("  长椅等待：场景切到夜色、时段入夜  OK")
+	else:
+		_fail("等待后未进入夜色：scene=%s phase=%s" % [world.scene_id, world.phase_name()])
+	# 夜里回访：帮过忙的问候 + 旧鞋只在显式选项里。
+	world.puzzle.add_evidence("ev_shoes")
+	var zhou_night: Dictionary = _scene_npc("playground_night", "p_zhou")
+	world.player.pos = world.npc_pos(zhou_night) + Vector2(0, 16)
+	world._say_npc(zhou_night)
+	if not world._present_layer_open() and str(world._dialog_label.text).begins_with("你听"):
+		_ok()
+		print("  夜里回访先播「你听，轻多了」，不弹卡  OK")
+	else:
+		_fail("夜里回访问候/面板次序不对")
+	world._advance_dialog()
+	world._advance_dialog()
+	var has_present: bool = false
+	for item in world._choice_options:
+		if str((item as Dictionary).get("id", "")) == "present":
+			has_present = true
+	if world._choice_open and has_present:
+		_ok()
+		print("  夜场选项含「拿出旧鞋」  OK")
+	else:
+		_fail("夜场选项缺「拿出旧鞋」")
+	world._choice_pick("present")
+	if world._present_layer_open():
+		_ok()
+		print("  显式选「拿出旧鞋」才开 A2 面板  OK")
+	else:
+		_fail("显式选择后未打开 A2 面板")
+	if world._evidence_panel != null:
+		world._evidence_panel.close()
+	world._close_dialog_now()
+	# 旧档缺 turn_phase 时默认午后。
+	TurnState.from_dict({"flags": {}})
+	if world.phase_name() == "afternoon":
+		_ok()
+		print("  旧档无 turn_phase：回落午后  OK")
+	else:
+		_fail("旧档缺键未回落午后")
+
+func _scene_npc(scene_id: String, person: String) -> Dictionary:
+	var scene: Dictionary = WorldData.all().get(scene_id, {}) as Dictionary
+	for item in scene.get("npcs", []) as Array:
+		var n: Dictionary = item as Dictionary
+		if str(n.get("id", "")) == person:
+			return n
+	return {}
+
+func _scene_spot(scene_id: String, kind: String, chore_id: String) -> Dictionary:
+	var scene: Dictionary = WorldData.all().get(scene_id, {}) as Dictionary
+	for item in scene.get("spots", []) as Array:
+		var s: Dictionary = item as Dictionary
+		if str(s.get("kind", "")) != kind:
+			continue
+		if not chore_id.is_empty() and str(s.get("chore", "")) != chore_id:
+			continue
+		return s
+	return {}
 
 func _ending_tier_checks() -> void:
 	print("== 终章收集度三档（R081）==")
@@ -1089,15 +1257,15 @@ func _title_checks() -> void:
 
 func _b6_delivery_checks() -> void:
 	print("== B6 交付项断言（R101/R103/R104/R109/R110）==")
-	# 内嵌 OFL 字体：文件存在且可被 FontFile 加载。
+	# 内嵌 OFL 字体：导出后只能走导入资源，不能再读 .ttf 源路径。
 	var font_path: String = "res://fonts/NotoSansSC-Regular.ttf"
 	if FileAccess.file_exists(font_path):
-		var ff: FontFile = FontFile.new()
-		if ff.load_dynamic_font(font_path) == OK:
+		var packed_font: Resource = load(font_path)
+		if packed_font is FontFile:
 			_ok()
-			print("  内嵌中文字体加载成功  OK")
+			print("  内嵌中文字体作为 FontFile 资源加载成功  OK")
 		else:
-			_fail("内嵌字体存在但 FontFile 加载失败")
+			_fail("内嵌字体资源不是 FontFile：" + font_path)
 	else:
 		_fail("缺少内嵌中文字体 " + font_path)
 

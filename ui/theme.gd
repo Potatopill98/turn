@@ -20,9 +20,13 @@ static var _hand: Font = null
 
 static func font() -> Font:
 	if _font == null:
-		var embedded: FontFile = FontFile.new()
-		if ResourceLoader.exists(EMBEDDED_FONT) and embedded.load_dynamic_font(EMBEDDED_FONT) == OK:
-			_font = embedded
+		# 导出后 .ttf 源文件不在 pck 里，只有导入后的 FontFile 资源；
+		# 因此走 ResourceLoader，而不是 load_dynamic_font(源路径)。
+		var packed: Resource = null
+		if ResourceLoader.exists(EMBEDDED_FONT):
+			packed = load(EMBEDDED_FONT)
+		if packed is FontFile:
+			_font = packed as FontFile
 		else:
 			# 干净机器上内嵌字体缺失时的降级回退链。
 			var sys: SystemFont = SystemFont.new()

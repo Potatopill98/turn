@@ -4,6 +4,7 @@ extends RefCounted
 # 全部用字符串路径 + 运行时 load，避免"图还没出"时 preload 直接编译失败。
 
 const ART: String = "res://art/"
+const DailyData = preload("res://world/daily_data.gd")
 # 角色绘制高度倍率：让主角/镇民在 960×600 的取景里不再像火柴人。
 const CHAR_SCALE: float = 1.8
 
@@ -534,4 +535,5 @@ static func all() -> Dictionary:
 		"no_puzzle_reason": "梦境链收尾节点：第三幕记忆在此醒回现实，票根与旧鞋的对照已在土路节点完成，此处只承担道别画面。",
 	}
 
+	DailyData.apply(d)
 	return d

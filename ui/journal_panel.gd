@@ -6,6 +6,7 @@ extends CanvasLayer
 const SKIN = preload("res://ui/theme.gd")
 const Data = preload("res://scripts/turn_data.gd")
 const PuzzleState = preload("res://world/puzzle_state.gd")
+const WorldData = preload("res://world/world_data.gd")
 
 const PANEL_LAYER := 120
 const PEOPLE_PER_PAGE := 6
@@ -617,6 +618,12 @@ func _build_detail() -> void:
 		var usage: String = puzzle.usage_of(id)
 		body_text = usage if not usage.is_empty() else "现场捡到的物证，已收进手记。"
 		foot_text = "现场物证 · 已记录"
+		var seen_id: String = str(TurnState.get_flag("ev_seen_" + id, ""))
+		if not seen_id.is_empty():
+			var seen_scene: Dictionary = WorldData.all().get(seen_id, {}) as Dictionary
+			var seen_title: String = str(seen_scene.get("title", ""))
+			if not seen_title.is_empty():
+				foot_text += " · 上次出现：" + seen_title
 	elif kind == "clue" and puzzle != null and puzzle.has_clue(id):
 		title_text = puzzle.clue_name(id)
 		var sources: Array[String] = puzzle.clue_sources(id)
