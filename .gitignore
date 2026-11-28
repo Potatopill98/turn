@@ -1,7 +1,11 @@
+# Godot
 .godot/
-export_credentials.cfg
 build/
+*.exe
+*.pck
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
 *.tmp
-tests/zz_*
-docs/*.docx
-turn-town-whitebox-github-upload/

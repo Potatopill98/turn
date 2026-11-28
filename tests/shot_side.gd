@@ -1,0 +1,135 @@
+extends Node
+
+const OUT_DIR: String = "C:/Users/45803/AppData/Local/Temp/"
+var world: Node
+
+
+func _ready() -> void:
+	var packed: PackedScene = load("res://main.tscn") as PackedScene
+	world = packed.instantiate()
+	add_child(world)
+	await _wait(0.8)
+	await _shot("turn_side_00_title.png")
+
+	world.call("debug_begin")
+	await _wait(0.5)
+	await _shot("turn_side_01_intro.png")
+	world.call("debug_advance", 6)
+	await _wait(0.3)
+	await _shot("turn_side_02_station.png")
+
+	world.call("debug_load", "street_west", 1380.0)
+	await _wait(0.5)
+	await _shot("turn_side_03_street.png")
+	world.call("debug_talk", "p_xiaoman")
+	await _wait(0.3)
+	world.call("debug_advance", 10)
+	await _wait(0.3)
+	await _shot("turn_side_04_choice.png")
+	world.call("debug_choose", 0)
+	await _wait(0.3)
+	world.call("debug_goto", 1460.0)
+	await _wait(0.4)
+	await _shot("turn_side_05_chore.png")
+	world.call("debug_interact")
+	await _wait(0.3)
+	world.call("debug_advance", 1)
+	await _wait(0.2)
+	world.call("debug_advance", 1)
+	await _wait(0.4)
+	await _shot("turn_side_06_chore_done.png")
+	world.call("debug_advance", 4)
+	await _wait(0.4)
+
+	world.call("debug_load", "playground", 560.0)
+	await _wait(0.5)
+	await _shot("turn_side_07_playground_day.png")
+	world.call("debug_talk", "p_zhou")
+	await _wait(0.3)
+	world.call("debug_advance", 10)
+	await _wait(0.3)
+	await _shot("turn_side_08_zhou_choice.png")
+	world.call("debug_choose", 0)
+	await _wait(0.3)
+	world.call("debug_goto", 640.0)
+	await _wait(0.3)
+	world.call("debug_interact")
+	await _wait(0.2)
+	world.call("debug_advance", 1)
+	await _wait(0.2)
+	world.call("debug_advance", 1)
+	await _wait(0.2)
+	world.call("debug_interact")
+	await _wait(0.2)
+	world.call("debug_advance", 1)
+	await _wait(0.5)
+	await _shot("turn_side_09_dusk.png")
+	world.call("debug_advance", 1)
+	await _wait(0.5)
+	await _shot("turn_side_09b_done.png")
+	world.call("debug_advance", 4)
+	await _wait(0.3)
+
+	world.call("debug_set_phase", 2)
+	world.call("debug_load", "playground", 700.0)
+	await _wait(0.6)
+	await _shot("turn_side_10_night.png")
+	world.call("debug_goto", 540.0)
+	await _wait(0.4)
+	await _shot("turn_side_11_shoes.png")
+	world.call("debug_interact")
+	await _wait(0.3)
+	await _shot("turn_side_12_evidence.png")
+	world.call("debug_advance", 2)
+	await _wait(0.3)
+	world.call("debug_open_journal")
+	await _wait(0.3)
+	world.call("debug_journal_tab", 2)
+	await _wait(0.3)
+	await _shot("turn_side_13_journal.png")
+	var ui_node: Control = world.get("ui") as Control
+	ui_node.call("close_journal")
+	await _wait(0.3)
+
+	world.call("debug_load", "crossing", 1450.0)
+	await _wait(0.5)
+	await _shot("turn_side_14_crossing.png")
+	world.call("debug_talk", "p_tang")
+	await _wait(0.3)
+	world.call("debug_advance", 10)
+	await _wait(0.3)
+	await _shot("turn_side_15_tang_choice.png")
+
+	world.call("debug_load", "town_final", 1600.0)
+	await _wait(0.5)
+	await _shot("turn_side_16_final.png")
+	world.call("debug_goto", 1700.0)
+	await _wait(0.3)
+	world.call("debug_interact")
+	await _wait(0.3)
+	world.call("debug_advance", 10)
+	await _wait(0.3)
+	await _shot("turn_side_17_final_choice.png")
+	world.call("debug_choose", 0)
+	await _wait(0.4)
+	await _shot("turn_side_18_ending.png")
+	world.call("debug_show_ending", "turn")
+	await _wait(0.4)
+	await _shot("turn_side_19_ending_turn.png")
+
+	get_tree().quit()
+
+
+func _wait(seconds: float) -> void:
+	await get_tree().create_timer(seconds, true).timeout
+
+
+func _shot(name: String) -> void:
+	var ui_node: Control = world.get("ui") as Control
+	if ui_node != null and bool(ui_node.call("is_typing")):
+		ui_node.call("advance_dialog")
+	await _wait(0.15)
+	await RenderingServer.frame_post_draw
+	var image: Image = get_viewport().get_texture().get_image()
+	image.save_png(OUT_DIR + name)
+	print("SHOT " + name)
